@@ -1,0 +1,91 @@
+name: Build and Release
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    runs-on: macos-14
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      
+      - name: Setup Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '15.4'
+      
+      - name: Build App
+        run: |
+          cd CopilotMonitor
+          xcodebuild -project CopilotMonitor.xcodeproj \
+            -scheme CopilotMonitor \
+            -configuration Release \
+            -archivePath build/CopilotMonitor.xcarchive \
+            archive \
+            CODE_SIGN_IDENTITY="-" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO
+      
+      - name: Export App
+        run: |
+          cd CopilotMonitor
+          xcodebuild -exportArchive \
+            -archivePath build/CopilotMonitor.xcarchive \
+            -exportPath build/export \
+            -exportOptionsPlist ../ExportOptions.plist
+      
+      - name: Create DMG
+        run: |
+          # Create DMG folder structure
+          mkdir -p dmg_temp
+          cp -R CopilotMonitor/build/export/CopilotMonitor.app dmg_temp/
+          ln -s /Applications dmg_temp/Applications
+          
+          # Create DMG
+          hdiutil create -volname "Copilot Monitor" \
+            -srcfolder dmg_temp \
+            -ov -format UDZO \
+            CopilotMonitor.dmg
+          
+          rm -rf dmg_temp
+      
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: CopilotMonitor
+          path: CopilotMonitor.dmg
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    
+    permissions:
+      contents: write
+    
+    steps:
+      - name: Download Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: CopilotMonitor
+      
+      - name: Get Version
+        id: version
+        run: echo "version=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+      
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          name: Copilot Monitor ${{ steps.version.outputs.version }}
+          draft: false
+          prerelease: false
+          files: CopilotMonitor.dmg
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
