@@ -4,6 +4,7 @@ import WebKit
 enum UsageFetcherError: LocalizedError {
     case noCustomerId
     case noUsageData
+    case invalidJSResult
     case parsingFailed(String)
     case networkError(Error)
     
@@ -13,6 +14,8 @@ enum UsageFetcherError: LocalizedError {
             return "Customer ID를 찾을 수 없습니다"
         case .noUsageData:
             return "사용량 데이터를 찾을 수 없습니다"
+        case .invalidJSResult:
+            return "JS 결과가 올바르지 않습니다"
         case .parsingFailed(let detail):
             return "파싱 실패: \(detail)"
         case .networkError(let error):

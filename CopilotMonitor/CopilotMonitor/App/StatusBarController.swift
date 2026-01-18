@@ -376,6 +376,19 @@ final class StatusBarController: NSObject {
     private var lastFetchTime: Date?
     private var isFetching = false
     
+    // History fetch properties
+    private var historyFetchTimer: Timer?
+    private var usageHistory: UsageHistory?
+    private var lastHistoryFetchResult: HistoryFetchResult = .none
+    private var customerId: String?
+    
+    enum HistoryFetchResult {
+        case none           // 아직 fetch 안 함
+        case success        // API 성공
+        case failedWithCache // API 실패, 캐시 사용
+        case failedNoCache   // API 실패, 캐시도 없음
+    }
+    
     private var refreshInterval: RefreshInterval {
         get {
             let rawValue = UserDefaults.standard.integer(forKey: "refreshInterval")
@@ -475,6 +488,7 @@ final class StatusBarController: NSObject {
             guard let self = self else { return }
             Task { @MainActor [weak self] in
                 self?.fetchUsage()
+                self?.startHistoryFetchTimer()
             }
         }
         NotificationCenter.default.addObserver(forName: Notification.Name("sessionExpired"), object: nil, queue: .main) { [weak self] _ in
@@ -482,6 +496,8 @@ final class StatusBarController: NSObject {
             guard let self = self else { return }
             Task { @MainActor [weak self] in
                 self?.updateUIForLoggedOut()
+                self?.historyFetchTimer?.invalidate()
+                self?.historyFetchTimer = nil
             }
         }
     }
@@ -530,6 +546,7 @@ final class StatusBarController: NSObject {
         let customerId = await fetchCustomerId(webView: webView)
         
         if let validId = customerId {
+            self.customerId = validId
             let success = await fetchAndProcessUsageData(webView: webView, customerId: validId)
             if success {
                 isFetching = false
@@ -815,22 +832,114 @@ final class StatusBarController: NSObject {
         guard let data = UserDefaults.standard.data(forKey: "copilot.usage.cache") else { return nil }
         return try? JSONDecoder().decode(CachedUsage.self, from: data)
     }
-}
-
-enum UsageFetcherError: LocalizedError {
-    case noCustomerId
-    case noUsageData
-    case invalidJSResult
-    case parsingFailed(String)
     
-    var errorDescription: String? {
-        switch self {
-        case .noCustomerId: return "Customer ID를 찾을 수 없습니다"
-        case .noUsageData: return "사용량 데이터를 찾을 수 없습니다"
-        case .invalidJSResult: return "JS 결과가 올바르지 않습니다"
-        case .parsingFailed(let msg): return "파싱 실패: \(msg)"
+    private func fetchUsageHistoryNow() {
+        guard let customerId = self.customerId else {
+            logger.warning("fetchUsageHistoryNow: customerId가 nil, 스킵")
+            return
+        }
+        
+        logger.info("fetchUsageHistoryNow: 시작, customerId=\(customerId)")
+        
+        let webView = AuthManager.shared.webView
+        
+        Task { @MainActor in
+            let js = """
+            return await (async function() {
+                try {
+                    const res = await fetch('/settings/billing/copilot_usage_table?customer_id=\(customerId)&group=0&period=3&query=&page=1', {
+                        headers: { 'Accept': 'application/json', 'x-requested-with': 'XMLHttpRequest' }
+                    });
+                    return await res.json();
+                } catch(e) { return { error: e.toString() }; }
+            })()
+            """
+            
+            do {
+                let result = try await webView.callAsyncJavaScript(js, arguments: [:], in: nil, contentWorld: .defaultClient)
+                
+                guard let rootDict = result as? [String: Any] else {
+                    logger.error("fetchUsageHistoryNow: 실패 - 결과가 dictionary가 아님")
+                    self.lastHistoryFetchResult = self.usageHistory != nil ? .failedWithCache : .failedNoCache
+                    return
+                }
+                
+                if let error = rootDict["error"] as? String {
+                    logger.error("fetchUsageHistoryNow: 실패 - JS 에러: \(error)")
+                    self.lastHistoryFetchResult = self.usageHistory != nil ? .failedWithCache : .failedNoCache
+                    return
+                }
+                
+                guard let table = rootDict["table"] as? [String: Any],
+                      let rows = table["rows"] as? [[String: Any]] else {
+                    logger.error("fetchUsageHistoryNow: 실패 - table/rows 파싱 실패")
+                    self.lastHistoryFetchResult = self.usageHistory != nil ? .failedWithCache : .failedNoCache
+                    return
+                }
+                
+                let dateFormatter = DateFormatter()
+                dateFormatter.dateFormat = "yyyy-MM-dd HH:mm:ss Z 'utc'"
+                dateFormatter.locale = Locale(identifier: "en_US_POSIX")
+                dateFormatter.timeZone = TimeZone(identifier: "UTC")
+                
+                var dailyUsages: [DailyUsage] = []
+                
+                for row in rows {
+                    guard let cells = row["cells"] as? [[String: Any]],
+                          cells.count >= 5 else {
+                        continue
+                    }
+                    
+                    guard let dateStr = cells[0]["sortValue"] as? String,
+                          let date = dateFormatter.date(from: dateStr) else {
+                        continue
+                    }
+                    
+                    let includedRequests = parseDoubleFromCell(cells[1]["value"])
+                    let billedRequests = parseDoubleFromCell(cells[2]["value"])
+                    let grossAmount = parseCurrencyFromCell(cells[3]["value"])
+                    let billedAmount = parseCurrencyFromCell(cells[4]["value"])
+                    
+                    dailyUsages.append(DailyUsage(
+                        date: date,
+                        includedRequests: includedRequests,
+                        billedRequests: billedRequests,
+                        grossAmount: grossAmount,
+                        billedAmount: billedAmount
+                    ))
+                }
+                
+                dailyUsages.sort { $0.date > $1.date }
+                
+                let history = UsageHistory(fetchedAt: Date(), days: dailyUsages)
+                self.usageHistory = history
+                self.lastHistoryFetchResult = .success
+                
+                logger.info("fetchUsageHistoryNow: 완료, days.count=\(history.days.count), totalRequests=\(history.totalIncludedRequests)")
+            } catch {
+                logger.error("fetchUsageHistoryNow: 실패 - \(error.localizedDescription)")
+                self.lastHistoryFetchResult = self.usageHistory != nil ? .failedWithCache : .failedNoCache
+            }
+        }
+    }
+    
+    private func parseDoubleFromCell(_ value: Any?) -> Double {
+        guard let str = value as? String else { return 0 }
+        let cleaned = str.replacingOccurrences(of: ",", with: "")
+        return Double(cleaned) ?? 0
+    }
+    
+    private func parseCurrencyFromCell(_ value: Any?) -> Double {
+        guard let str = value as? String else { return 0 }
+        let cleaned = str.replacingOccurrences(of: "$", with: "").replacingOccurrences(of: ",", with: "")
+        return Double(cleaned) ?? 0
+    }
+    
+    private func startHistoryFetchTimer() {
+        historyFetchTimer?.invalidate()
+        fetchUsageHistoryNow()
+        historyFetchTimer = Timer.scheduledTimer(withTimeInterval: 5 * 60, repeats: true) { [weak self] _ in
+            self?.fetchUsageHistoryNow()
         }
     }
 }
-
-
