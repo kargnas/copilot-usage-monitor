@@ -450,6 +450,9 @@ final class StatusBarController: NSObject {
         historySubmenu.addItem(loadingItem)
         menu.addItem(historyMenuItem)
         
+        // Load cached history immediately on startup (before API fetch completes)
+        loadCachedHistoryOnStartup()
+        
         signInItem = NSMenuItem(title: "Sign In", action: #selector(signInClicked), keyEquivalent: "")
         signInItem.target = self
         menu.addItem(signInItem)
@@ -855,6 +858,40 @@ final class StatusBarController: NSObject {
         return try? JSONDecoder().decode(CachedUsage.self, from: data)
     }
     
+    private func saveHistoryCache(_ history: UsageHistory) {
+        if let data = try? JSONEncoder().encode(history) {
+            UserDefaults.standard.set(data, forKey: "copilot.history.cache")
+        }
+    }
+    
+    private func loadHistoryCache() -> UsageHistory? {
+        guard let data = UserDefaults.standard.data(forKey: "copilot.history.cache") else { return nil }
+        return try? JSONDecoder().decode(UsageHistory.self, from: data)
+    }
+    
+    private func hasMonthChanged(_ date: Date) -> Bool {
+        let calendar = Calendar.current
+        return calendar.component(.month, from: date) != calendar.component(.month, from: Date())
+            || calendar.component(.year, from: date) != calendar.component(.year, from: Date())
+    }
+    
+    private func loadCachedHistoryOnStartup() {
+        guard let cached = loadHistoryCache() else {
+            logger.info("캐시 없음 - 히스토리 로드 스킵")
+            return
+        }
+        
+        if hasMonthChanged(cached.fetchedAt) {
+            logger.info("월 변경 감지 - 캐시 삭제")
+            UserDefaults.standard.removeObject(forKey: "copilot.history.cache")
+            return
+        }
+        
+        self.usageHistory = cached
+        self.lastHistoryFetchResult = .failedWithCache
+        updateHistorySubmenu()
+    }
+    
     private func fetchUsageHistoryNow() {
         guard let customerId = self.customerId else {
             logger.warning("fetchUsageHistoryNow: customerId가 nil, 스킵")
@@ -936,12 +973,13 @@ final class StatusBarController: NSObject {
                 let history = UsageHistory(fetchedAt: Date(), days: dailyUsages)
                 self.usageHistory = history
                 self.lastHistoryFetchResult = .success
+                self.saveHistoryCache(history)
                 
                 logger.info("fetchUsageHistoryNow: 완료, days.count=\(history.days.count), totalRequests=\(history.totalIncludedRequests)")
                 self.updateHistorySubmenu()
             } catch {
                 logger.error("fetchUsageHistoryNow: 실패 - \(error.localizedDescription)")
-                self.lastHistoryFetchResult = self.usageHistory != nil ? .failedWithCache : .failedNoCache
+                self.handleHistoryFetchFailure()
                 self.updateHistorySubmenu()
             }
         }
@@ -957,6 +995,22 @@ final class StatusBarController: NSObject {
         guard let str = value as? String else { return 0 }
         let cleaned = str.replacingOccurrences(of: "$", with: "").replacingOccurrences(of: ",", with: "")
         return Double(cleaned) ?? 0
+    }
+    
+    private func handleHistoryFetchFailure() {
+        if let cached = loadHistoryCache() {
+            if hasMonthChanged(cached.fetchedAt) {
+                UserDefaults.standard.removeObject(forKey: "copilot.history.cache")
+                self.usageHistory = nil
+                self.lastHistoryFetchResult = .failedNoCache
+            } else {
+                self.usageHistory = cached
+                self.lastHistoryFetchResult = .failedWithCache
+            }
+        } else {
+            self.usageHistory = nil
+            self.lastHistoryFetchResult = .failedNoCache
+        }
     }
     
     private func startHistoryFetchTimer() {
