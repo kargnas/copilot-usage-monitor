@@ -14,8 +14,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private(set) var updaterController: SPUStandardUpdaterController!
     
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // Sparkle 초기화 - 앱 시작 시 자동 업데이트 체크 시작
-        // startingUpdater: true로 설정하여 앱 시작과 동시에 업데이트 체크
         updaterController = SPUStandardUpdaterController(
             startingUpdater: true,
             updaterDelegate: nil,
@@ -24,6 +22,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         
         statusBarController = StatusBarController()
         setupNotificationObservers()
+        
+        closeAllWindows()
+    }
+    
+    private func closeAllWindows() {
+        for window in NSApp.windows where window.title.contains("Settings") {
+            window.close()
+        }
     }
     
     private func setupNotificationObservers() {

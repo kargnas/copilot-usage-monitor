@@ -8,5 +8,6 @@ struct CopilotMonitorApp: App {
         Settings {
             EmptyView()
         }
+        .windowResizability(.contentSize)
     }
 }
