@@ -7,16 +7,22 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		0EA5E7A5BCD47582D6C2175B /* TokenManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = DBF0C48368166F3AD0C79F92 /* TokenManager.swift */; };
+		23AA5FD37F2062EACCA79F50 /* GeminiCLIProviderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B63B85E0F2A8C591D7E26AE2 /* GeminiCLIProviderTests.swift */; };
+		632E52F6050FAD5CAF928E36 /* CopilotProviderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED35D8BD06A436306085737D /* CopilotProviderTests.swift */; };
 		A11111111111111111111111 /* CopilotMonitorApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A22222222222222222222222 /* CopilotMonitorApp.swift */; };
 		A33333333333333333333333 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = A44444444444444444444444 /* AppDelegate.swift */; };
 		A55555555555555555555555 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A66666666666666666666666 /* Assets.xcassets */; };
+		B248782F500D3B09E0CE5AC8 /* ProviderUsage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4158558E58B121A9D13C48C3 /* ProviderUsage.swift */; };
 		C11111111111111111111111 /* AuthManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = C22222222222222222222222 /* AuthManager.swift */; };
 		C33333333333333333333333 /* UsageFetcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = C44444444444444444444444 /* UsageFetcher.swift */; };
 		C55555555555555555555555 /* LoginView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C66666666666666666666666 /* LoginView.swift */; };
+		CB3FA9AE43F3466269FA56F4 /* ProviderProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = BE39D5663A7ABADC7E54B91D /* ProviderProtocol.swift */; };
 		D11111111111111111111111 /* StatusBarController.swift in Sources */ = {isa = PBXBuildFile; fileRef = D22222222222222222222222 /* StatusBarController.swift */; };
 		E11111111111111111111111 /* CopilotUsage.swift in Sources */ = {isa = PBXBuildFile; fileRef = E22222222222222222222222 /* CopilotUsage.swift */; };
 		E33333333333333333333334 /* UsageHistory.swift in Sources */ = {isa = PBXBuildFile; fileRef = E44444444444444444444444 /* UsageHistory.swift */; };
 		F11111111111111111111111 /* UsagePredictor.swift in Sources */ = {isa = PBXBuildFile; fileRef = F22222222222222222222222 /* UsagePredictor.swift */; };
+		F35960B456C28D71BE7575A5 /* GeminiCLIProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 06EC3B683EB6892E4F9C8316 /* GeminiCLIProvider.swift */; };
 		SP1111111111111111111111 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = SP2222222222222222222222 /* Sparkle */; };
 		T11111111111111111111111 /* ProviderUsageTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = T22222222222222222222222 /* ProviderUsageTests.swift */; };
 		T33333333333333333333333 /* claude_response.json in Resources */ = {isa = PBXBuildFile; fileRef = T44444444444444444444444 /* claude_response.json */; };
@@ -25,19 +31,35 @@
 		T99999999999999999999999 /* gemini_response.json in Resources */ = {isa = PBXBuildFile; fileRef = TAAAAAAAAAAAAAAAAAAAAAAA /* gemini_response.json */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXContainerItemProxy section */
+		TNNNNNNNNNNNNNNNNNNNNNNN /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = B44444444444444444444444 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = AFFFFFFFFFFFFFFFFFFFFF;
+			remoteInfo = CopilotMonitor;
+		};
+/* End PBXContainerItemProxy section */
+
 /* Begin PBXFileReference section */
-		A77777777777777777777777 /* CopilotMonitor.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = CopilotMonitor.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		06EC3B683EB6892E4F9C8316 /* GeminiCLIProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = Providers/GeminiCLIProvider.swift; sourceTree = "<group>"; };
+		4158558E58B121A9D13C48C3 /* ProviderUsage.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ProviderUsage.swift; sourceTree = "<group>"; };
 		A22222222222222222222222 /* CopilotMonitorApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CopilotMonitorApp.swift; sourceTree = "<group>"; };
 		A44444444444444444444444 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		A66666666666666666666666 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		A77777777777777777777777 /* CopilotMonitor.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = CopilotMonitor.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A88888888888888888888888 /* CopilotMonitor.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = CopilotMonitor.entitlements; sourceTree = "<group>"; };
+		A99999999999999999999999 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		B63B85E0F2A8C591D7E26AE2 /* GeminiCLIProviderTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GeminiCLIProviderTests.swift; sourceTree = "<group>"; };
+		BE39D5663A7ABADC7E54B91D /* ProviderProtocol.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ProviderProtocol.swift; sourceTree = "<group>"; };
 		C22222222222222222222222 /* AuthManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthManager.swift; sourceTree = "<group>"; };
 		C44444444444444444444444 /* UsageFetcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UsageFetcher.swift; sourceTree = "<group>"; };
 		C66666666666666666666666 /* LoginView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginView.swift; sourceTree = "<group>"; };
 		D22222222222222222222222 /* StatusBarController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusBarController.swift; sourceTree = "<group>"; };
-		A99999999999999999999999 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		DBF0C48368166F3AD0C79F92 /* TokenManager.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TokenManager.swift; sourceTree = "<group>"; };
 		E22222222222222222222222 /* CopilotUsage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CopilotUsage.swift; sourceTree = "<group>"; };
 		E44444444444444444444444 /* UsageHistory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UsageHistory.swift; sourceTree = "<group>"; };
+		ED35D8BD06A436306085737D /* CopilotProviderTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = CopilotProviderTests.swift; sourceTree = "<group>"; };
 		F22222222222222222222222 /* UsagePredictor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UsagePredictor.swift; sourceTree = "<group>"; };
 		T22222222222222222222222 /* ProviderUsageTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderUsageTests.swift; sourceTree = "<group>"; };
 		T44444444444444444444444 /* claude_response.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = claude_response.json; sourceTree = "<group>"; };
@@ -66,6 +88,14 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		4D0546BDF4C7CD74746285DF /* Providers */ = {
+			isa = PBXGroup;
+			children = (
+				06EC3B683EB6892E4F9C8316 /* GeminiCLIProvider.swift */,
+			);
+			name = Providers;
+			sourceTree = "<group>";
+		};
 		ABBBBBBBBBBBBBBBBBBBBBBB = {
 			isa = PBXGroup;
 			children = (
@@ -74,22 +104,6 @@
 				ADDDDDDDDDDDDDDDDDDDDDDD /* Products */,
 				SP3333333333333333333333 /* Frameworks */,
 			);
-			sourceTree = "<group>";
-		};
-		ADDDDDDDDDDDDDDDDDDDDDDD /* Products */ = {
-			isa = PBXGroup;
-			children = (
-				A77777777777777777777777 /* CopilotMonitor.app */,
-				TDDDDDDDDDDDDDDDDDDDDDD /* CopilotMonitorTests.xctest */,
-			);
-			name = Products;
-			sourceTree = "<group>";
-		};
-		SP3333333333333333333333 /* Frameworks */ = {
-			isa = PBXGroup;
-			children = (
-			);
-			name = Frameworks;
 			sourceTree = "<group>";
 		};
 		ACCCCCCCCCCCCCCCCCCCCCCC /* CopilotMonitor */ = {
@@ -103,8 +117,18 @@
 				A66666666666666666666666 /* Assets.xcassets */,
 				A88888888888888888888888 /* CopilotMonitor.entitlements */,
 				A99999999999999999999999 /* Info.plist */,
+				4D0546BDF4C7CD74746285DF /* Providers */,
 			);
 			path = CopilotMonitor;
+			sourceTree = "<group>";
+		};
+		ADDDDDDDDDDDDDDDDDDDDDDD /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				A77777777777777777777777 /* CopilotMonitor.app */,
+				TDDDDDDDDDDDDDDDDDDDDDD /* CopilotMonitorTests.xctest */,
+			);
+			name = Products;
 			sourceTree = "<group>";
 		};
 		AEEEEEEEEEEEEEEEEEEEEEEE /* App */ = {
@@ -122,6 +146,7 @@
 				C22222222222222222222222 /* AuthManager.swift */,
 				C44444444444444444444444 /* UsageFetcher.swift */,
 				F22222222222222222222222 /* UsagePredictor.swift */,
+				DBF0C48368166F3AD0C79F92 /* TokenManager.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -139,8 +164,17 @@
 			children = (
 				E22222222222222222222222 /* CopilotUsage.swift */,
 				E44444444444444444444444 /* UsageHistory.swift */,
+				BE39D5663A7ABADC7E54B91D /* ProviderProtocol.swift */,
+				4158558E58B121A9D13C48C3 /* ProviderUsage.swift */,
 			);
 			path = Models;
+			sourceTree = "<group>";
+		};
+		SP3333333333333333333333 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			name = Frameworks;
 			sourceTree = "<group>";
 		};
 		TFFFFFFFFFFFFFFFFFFFFFFFF /* CopilotMonitorTests */ = {
@@ -148,6 +182,8 @@
 			children = (
 				T22222222222222222222222 /* ProviderUsageTests.swift */,
 				TOOOOOOOOOOOOOOOOOOOOOOO /* Fixtures */,
+				B63B85E0F2A8C591D7E26AE2 /* GeminiCLIProviderTests.swift */,
+				ED35D8BD06A436306085737D /* CopilotProviderTests.swift */,
 			);
 			path = CopilotMonitorTests;
 			sourceTree = "<group>";
@@ -277,6 +313,10 @@
 				E11111111111111111111111 /* CopilotUsage.swift in Sources */,
 				E33333333333333333333334 /* UsageHistory.swift in Sources */,
 				F11111111111111111111111 /* UsagePredictor.swift in Sources */,
+				F35960B456C28D71BE7575A5 /* GeminiCLIProvider.swift in Sources */,
+				CB3FA9AE43F3466269FA56F4 /* ProviderProtocol.swift in Sources */,
+				B248782F500D3B09E0CE5AC8 /* ProviderUsage.swift in Sources */,
+				0EA5E7A5BCD47582D6C2175B /* TokenManager.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -285,10 +325,20 @@
 			buildActionMask = 2147483647;
 			files = (
 				T11111111111111111111111 /* ProviderUsageTests.swift in Sources */,
+				23AA5FD37F2062EACCA79F50 /* GeminiCLIProviderTests.swift in Sources */,
+				632E52F6050FAD5CAF928E36 /* CopilotProviderTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		TKKKKKKKKKKKKKKKKKKKKKKK /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = AFFFFFFFFFFFFFFFFFFFFF /* CopilotMonitor */;
+			targetProxy = TNNNNNNNNNNNNNNNNNNNNNNN /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		B66666666666666666666666 /* Debug */ = {
@@ -496,20 +546,20 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		B55555555555555555555555 /* Build configuration list for PBXProject "CopilotMonitor" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				B66666666666666666666666 /* Debug */,
-				B77777777777777777777777 /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
 		B11111111111111111111111 /* Build configuration list for PBXNativeTarget "CopilotMonitor" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				B88888888888888888888888 /* Debug */,
 				B99999999999999999999999 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		B55555555555555555555555 /* Build configuration list for PBXProject "CopilotMonitor" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				B66666666666666666666666 /* Debug */,
+				B77777777777777777777777 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
@@ -543,24 +593,6 @@
 			productName = Sparkle;
 		};
 /* End XCSwiftPackageProductDependency section */
-
-/* Begin PBXTargetDependency section */
-		TKKKKKKKKKKKKKKKKKKKKKKK /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = AFFFFFFFFFFFFFFFFFFFFF /* CopilotMonitor */;
-			targetProxy = TNNNNNNNNNNNNNNNNNNNNNNN /* PBXContainerItemProxy */;
-		};
-/* End PBXTargetDependency section */
-
-/* Begin PBXContainerItemProxy section */
-		TNNNNNNNNNNNNNNNNNNNNNNN /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = B44444444444444444444444 /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = AFFFFFFFFFFFFFFFFFFFFF;
-			remoteInfo = CopilotMonitor;
-		};
-/* End PBXContainerItemProxy section */
 	};
 	rootObject = B44444444444444444444444 /* Project object */;
 }
