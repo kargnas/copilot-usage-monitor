@@ -960,6 +960,22 @@ final class StatusBarController: NSObject {
         logger.info("fetchMultiProviderData: Completed with \(filteredResults.count) results")
     }
     
+    private func calculatePayAsYouGoTotal(providerResults: [ProviderIdentifier: ProviderResult], copilotUsage: CopilotUsage?) -> Double {
+        var total = 0.0
+        
+        if let copilot = copilotUsage {
+            total += copilot.netBilledAmount
+        }
+        
+        for (_, result) in providerResults {
+            if case .payAsYouGo(_, let cost, _) = result.usage, let cost = cost {
+                total += cost
+            }
+        }
+        
+        return total
+    }
+    
      private func updateMultiProviderMenu() {
          guard let historyIndex = menu.items.firstIndex(of: historyMenuItem) else { return }
          
@@ -978,12 +994,16 @@ final class StatusBarController: NSObject {
         
         var insertIndex = historyIndex + 1
         
-        let separator1 = NSMenuItem.separator()
-        separator1.tag = 999
-        menu.insertItem(separator1, at: insertIndex)
-        insertIndex += 1
-        
-         let payAsYouGoHeader = NSMenuItem(title: "Pay-as-you-go", action: nil, keyEquivalent: "")
+         let separator1 = NSMenuItem.separator()
+         separator1.tag = 999
+         menu.insertItem(separator1, at: insertIndex)
+         insertIndex += 1
+         
+          let total = calculatePayAsYouGoTotal(providerResults: providerResults, copilotUsage: currentUsage)
+          let payAsYouGoHeader = NSMenuItem(
+              title: String(format: "Pay-as-you-go                    $%.2f", total),
+              action: nil, keyEquivalent: ""
+          )
          payAsYouGoHeader.isEnabled = false
          payAsYouGoHeader.tag = 999
          menu.insertItem(payAsYouGoHeader, at: insertIndex)
@@ -1005,20 +1025,25 @@ final class StatusBarController: NSObject {
               insertIndex += 1
           }
          
-          for (identifier, result) in providerResults {
-             if case .payAsYouGo(let utilization, _, _) = result.usage {
-                 hasPayAsYouGo = true
-                 let item = createPayAsYouGoMenuItem(identifier: identifier, utilization: utilization)
-                 item.tag = 999
-                
-                if let details = result.details, details.hasAnyValue {
-                    item.submenu = createDetailSubmenu(details)
-                }
-                
-                menu.insertItem(item, at: insertIndex)
-                insertIndex += 1
-            }
-        }
+           for (identifier, result) in providerResults {
+              if case .payAsYouGo(_, let cost, _) = result.usage {
+                  hasPayAsYouGo = true
+                  let costValue = cost ?? 0.0
+                  let item = NSMenuItem(
+                      title: String(format: "%@    $%.2f", identifier.displayName, costValue),
+                      action: nil, keyEquivalent: ""
+                  )
+                  item.image = iconForProvider(identifier)
+                  item.tag = 999
+                 
+                 if let details = result.details, details.hasAnyValue {
+                     item.submenu = createDetailSubmenu(details)
+                 }
+                 
+                 menu.insertItem(item, at: insertIndex)
+                 insertIndex += 1
+             }
+         }
         
         if !hasPayAsYouGo {
             let noItem = NSMenuItem(title: "  No providers", action: nil, keyEquivalent: "")
