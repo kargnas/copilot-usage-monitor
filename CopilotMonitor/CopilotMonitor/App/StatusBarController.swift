@@ -1005,11 +1005,11 @@ final class StatusBarController: NSObject {
              insertIndex += 1
          }
          
-         for (identifier, result) in providerResults {
-            if case .payAsYouGo(let utilization, _) = result.usage {
-                hasPayAsYouGo = true
-                let item = createPayAsYouGoMenuItem(identifier: identifier, utilization: utilization)
-                item.tag = 999
+          for (identifier, result) in providerResults {
+             if case .payAsYouGo(let utilization, _, _) = result.usage {
+                 hasPayAsYouGo = true
+                 let item = createPayAsYouGoMenuItem(identifier: identifier, utilization: utilization)
+                 item.tag = 999
                 
                 if let details = result.details, details.hasAnyValue {
                     item.submenu = createDetailSubmenu(details)
@@ -1111,6 +1111,10 @@ final class StatusBarController: NSObject {
             return NSImage(named: "OpencodeIcon")
         case .openRouter:
             return NSImage(systemSymbolName: "arrow.triangle.branch", accessibilityDescription: identifier.displayName)
+        case .antigravity:
+            return NSImage(systemSymbolName: identifier.iconName, accessibilityDescription: identifier.displayName)
+        case .openCodeZen:
+            return NSImage(systemSymbolName: identifier.iconName, accessibilityDescription: identifier.displayName)
         }
     }
     

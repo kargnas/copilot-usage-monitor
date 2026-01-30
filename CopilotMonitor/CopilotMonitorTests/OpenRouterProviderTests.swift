@@ -95,7 +95,7 @@ final class OpenRouterProviderTests: XCTestCase {
     }
     
     func testProviderUsagePayAsYouGoModel() {
-        let usage = ProviderUsage.payAsYouGo(utilization: 97.96, resetsAt: nil)
+        let usage = ProviderUsage.payAsYouGo(utilization: 97.96, cost: nil, resetsAt: nil)
         
         XCTAssertEqual(usage.usagePercentage, 97.96)
         XCTAssertTrue(usage.isWithinLimit)

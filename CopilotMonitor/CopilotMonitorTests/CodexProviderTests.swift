@@ -54,7 +54,7 @@ final class CodexProviderTests: XCTestCase {
     }
     
     func testProviderUsagePayAsYouGoModel() {
-        let usage = ProviderUsage.payAsYouGo(utilization: 9.0, resetsAt: Date(timeIntervalSinceNow: 7252))
+        let usage = ProviderUsage.payAsYouGo(utilization: 9.0, cost: nil, resetsAt: Date(timeIntervalSinceNow: 7252))
         
         XCTAssertEqual(usage.usagePercentage, 9.0)
         XCTAssertTrue(usage.isWithinLimit)
@@ -65,7 +65,7 @@ final class CodexProviderTests: XCTestCase {
     
     func testProviderUsageStatusMessage() {
         let resetTime = Date(timeIntervalSinceNow: 3600)
-        let usage = ProviderUsage.payAsYouGo(utilization: 9.0, resetsAt: resetTime)
+        let usage = ProviderUsage.payAsYouGo(utilization: 9.0, cost: nil, resetsAt: resetTime)
         
         let message = usage.statusMessage
         XCTAssertTrue(message.contains("9.0%"))

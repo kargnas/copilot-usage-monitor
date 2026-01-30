@@ -22,6 +22,10 @@ enum ProviderIdentifier: String, CaseIterable {
     case openRouter = "open_router"
     /// OpenCode (pay-as-you-go)
     case openCode = "open_code"
+    /// Antigravity (pay-as-you-go)
+    case antigravity
+    /// OpenCode Zen (pay-as-you-go)
+    case openCodeZen = "open_code_zen"
     
     /// Human-readable name for the provider
     var displayName: String {
@@ -38,6 +42,32 @@ enum ProviderIdentifier: String, CaseIterable {
             return "OpenRouter"
         case .openCode:
             return "OpenCode"
+        case .antigravity:
+            return "Antigravity"
+        case .openCodeZen:
+            return "OpenCode Zen"
+        }
+    }
+    
+    /// SF Symbol name for the provider icon
+    var iconName: String {
+        switch self {
+        case .copilot:
+            return "github"
+        case .claude:
+            return "brain.head.profile"
+        case .codex:
+            return "sparkles"
+        case .geminiCLI:
+            return "g.circle"
+        case .openRouter:
+            return "network"
+        case .openCode:
+            return "terminal"
+        case .antigravity:
+            return "arrow.up.circle"
+        case .openCodeZen:
+            return "moon.stars"
         }
     }
 }

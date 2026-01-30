@@ -69,7 +69,7 @@ final class OpenRouterProvider: ProviderProtocol {
         )
         
         return ProviderResult(
-            usage: .payAsYouGo(utilization: utilization, resetsAt: nil),
+            usage: .payAsYouGo(utilization: utilization, cost: nil, resetsAt: nil),
             details: details
         )
     }

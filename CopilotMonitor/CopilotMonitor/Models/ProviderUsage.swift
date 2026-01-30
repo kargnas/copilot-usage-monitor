@@ -3,10 +3,11 @@ import Foundation
 /// Represents usage data from an AI provider
 /// Uses enum with associated values to support different billing models
 enum ProviderUsage {
-    /// Pay-as-you-go model: tracks utilization percentage and reset time
+    /// Pay-as-you-go model: tracks utilization percentage, cost, and reset time
     /// - utilization: Current usage as percentage (0-100+)
+    /// - cost: Current cost in dollars (optional)
     /// - resetsAt: When the usage window resets
-    case payAsYouGo(utilization: Double, resetsAt: Date?)
+    case payAsYouGo(utilization: Double, cost: Double?, resetsAt: Date?)
     
     /// Quota-based model: tracks remaining quota and entitlement
     /// - remaining: Remaining quota (can be negative if overage permitted)
@@ -21,7 +22,7 @@ enum ProviderUsage {
     /// For pay-as-you-go: utilization value
     var usagePercentage: Double {
         switch self {
-        case .payAsYouGo(let utilization, _):
+        case .payAsYouGo(let utilization, _, _):
             return utilization
         case .quotaBased(let remaining, let entitlement, _):
             guard entitlement > 0 else { return 0 }
@@ -35,7 +36,7 @@ enum ProviderUsage {
     /// For pay-as-you-go: utilization <= 100
     var isWithinLimit: Bool {
         switch self {
-        case .payAsYouGo(let utilization, _):
+        case .payAsYouGo(let utilization, _, _):
             return utilization <= 100
         case .quotaBased(let remaining, _, _):
             return remaining >= 0
@@ -45,7 +46,7 @@ enum ProviderUsage {
     /// Human-readable status message
     var statusMessage: String {
         switch self {
-        case .payAsYouGo(let utilization, let resetsAt):
+        case .payAsYouGo(let utilization, _, let resetsAt):
             let percentStr = String(format: "%.1f%%", utilization)
             if let resetsAt = resetsAt {
                 let formatter = RelativeDateTimeFormatter()
@@ -92,8 +93,19 @@ enum ProviderUsage {
     /// Returns nil for quota-based providers
     var resetTime: Date? {
         switch self {
-        case .payAsYouGo(_, let resetsAt):
+        case .payAsYouGo(_, _, let resetsAt):
             return resetsAt
+        case .quotaBased:
+            return nil
+        }
+    }
+    
+    /// Cost for pay-as-you-go providers
+    /// Returns nil for quota-based providers
+    var cost: Double? {
+        switch self {
+        case .payAsYouGo(_, let cost, _):
+            return cost
         case .quotaBased:
             return nil
         }
@@ -106,6 +118,7 @@ extension ProviderUsage: Codable {
     enum CodingKeys: String, CodingKey {
         case type
         case utilization
+        case cost
         case resetsAt
         case remaining
         case entitlement
@@ -119,8 +132,9 @@ extension ProviderUsage: Codable {
         switch type {
         case "payAsYouGo":
             let utilization = (try? container.decodeIfPresent(Double.self, forKey: .utilization)) ?? 0.0
+            let cost = try? container.decodeIfPresent(Double.self, forKey: .cost)
             let resetsAt = try? container.decodeIfPresent(Date.self, forKey: .resetsAt)
-            self = .payAsYouGo(utilization: utilization, resetsAt: resetsAt)
+            self = .payAsYouGo(utilization: utilization, cost: cost, resetsAt: resetsAt)
             
         case "quotaBased":
             let remaining = (try? container.decodeIfPresent(Int.self, forKey: .remaining)) ?? 0
@@ -141,9 +155,10 @@ extension ProviderUsage: Codable {
         var container = encoder.container(keyedBy: CodingKeys.self)
         
         switch self {
-        case .payAsYouGo(let utilization, let resetsAt):
+        case .payAsYouGo(let utilization, let cost, let resetsAt):
             try container.encode("payAsYouGo", forKey: .type)
             try container.encode(utilization, forKey: .utilization)
+            try container.encodeIfPresent(cost, forKey: .cost)
             try container.encodeIfPresent(resetsAt, forKey: .resetsAt)
             
         case .quotaBased(let remaining, let entitlement, let overagePermitted):
@@ -160,8 +175,8 @@ extension ProviderUsage: Codable {
 extension ProviderUsage: Equatable {
     static func == (lhs: ProviderUsage, rhs: ProviderUsage) -> Bool {
         switch (lhs, rhs) {
-        case let (.payAsYouGo(lUtil, lReset), .payAsYouGo(rUtil, rReset)):
-            return lUtil == rUtil && lReset == rReset
+        case let (.payAsYouGo(lUtil, lCost, lReset), .payAsYouGo(rUtil, rCost, rReset)):
+            return lUtil == rUtil && lCost == rCost && lReset == rReset
         case let (.quotaBased(lRem, lEnt, lOver), .quotaBased(rRem, rEnt, rOver)):
             return lRem == rRem && lEnt == rEnt && lOver == rOver
         default:
