@@ -47,6 +47,7 @@ final class OpenRouterProvider: ProviderProtocol {
         let creditsResponse = try await fetchCredits(apiKey: apiKey)
         let keyResponse = try await fetchKeyInfo(apiKey: apiKey)
         
+        // Calculate utilization as percentage of credits used
         let utilization: Double
         if creditsResponse.data.total_credits > 0 {
             utilization = (creditsResponse.data.total_usage / creditsResponse.data.total_credits) * 100.0
@@ -55,21 +56,32 @@ final class OpenRouterProvider: ProviderProtocol {
             logger.warning("Total credits is zero, setting utilization to 0%")
         }
         
-        logger.info("Successfully fetched OpenRouter usage: \(String(format: "%.2f", utilization))% utilized (used: \(creditsResponse.data.total_usage), total: \(creditsResponse.data.total_credits))")
+        // Extract monthly cost from API response
+        let monthlyCost = keyResponse.data.usage_monthly ?? 0.0
+        let dailyCost = keyResponse.data.usage_daily
+        let weeklyCost = keyResponse.data.usage_weekly
+        
+        // Calculate remaining credits
+        let remainingCredits = creditsResponse.data.total_credits - creditsResponse.data.total_usage
+        
+        logger.info("Successfully fetched OpenRouter usage: \(String(format: "%.2f", utilization))% utilized (used: \(creditsResponse.data.total_usage), total: \(creditsResponse.data.total_credits)), monthly cost: $\(String(format: "%.2f", monthlyCost))")
         
         let details = DetailedUsage(
-            dailyUsage: keyResponse.data.usage_daily,
-            weeklyUsage: keyResponse.data.usage_weekly,
+            dailyUsage: dailyCost,
+            weeklyUsage: weeklyCost,
             monthlyUsage: keyResponse.data.usage_monthly,
             totalCredits: creditsResponse.data.total_credits,
-            remainingCredits: creditsResponse.data.total_credits - creditsResponse.data.total_usage,
+            remainingCredits: remainingCredits,
             limit: keyResponse.data.limit,
             limitRemaining: keyResponse.data.limit_remaining,
-            resetPeriod: keyResponse.data.limit_reset
+            resetPeriod: keyResponse.data.limit_reset,
+            monthlyCost: monthlyCost,
+            creditsRemaining: remainingCredits,
+            creditsTotal: creditsResponse.data.total_credits
         )
         
         return ProviderResult(
-            usage: .payAsYouGo(utilization: utilization, cost: nil, resetsAt: nil),
+            usage: .payAsYouGo(utilization: utilization, cost: monthlyCost, resetsAt: nil),
             details: details
         )
     }
