@@ -809,6 +809,32 @@ final class StatusBarController: NSObject {
                 submenu.addItem(NSMenuItem(title: "Messages: \(formatted)", action: nil, keyEquivalent: ""))
             }
             
+            // Usage History submenu
+            if let history = details.dailyHistory, !history.isEmpty {
+                submenu.addItem(NSMenuItem.separator())
+                let historyItem = NSMenuItem(title: "Usage History", action: nil, keyEquivalent: "")
+                historyItem.image = NSImage(systemSymbolName: "chart.bar.fill", accessibilityDescription: "Usage History")
+                let historySubmenu = NSMenu()
+                
+                let dateFormatter = DateFormatter()
+                dateFormatter.dateFormat = "MMM d"
+                
+                for day in history.prefix(7) {
+                    let cost = day.billedAmount
+                    let title = String(format: "%@: $%.2f", dateFormatter.string(from: day.date), cost)
+                    let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+                    item.isEnabled = false
+                    item.attributedTitle = NSAttributedString(
+                        string: title,
+                        attributes: [.font: NSFont.monospacedDigitSystemFont(ofSize: 13, weight: .regular)]
+                    )
+                    historySubmenu.addItem(item)
+                }
+                
+                historyItem.submenu = historySubmenu
+                submenu.addItem(historyItem)
+            }
+            
         case .claude:
             if let fiveHour = details.fiveHourUsage {
                 submenu.addItem(NSMenuItem(title: String(format: "5h Window: %.0f%%", fiveHour), action: nil, keyEquivalent: ""))
