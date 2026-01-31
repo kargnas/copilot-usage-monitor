@@ -513,55 +513,47 @@ extension StatusBarController {
         let leftTextField = NSTextField(labelWithString: "Pace: \(paceInfo.statusText)")
         leftTextField.font = NSFont.systemFont(ofSize: fontSize)
         leftTextField.textColor = .disabledControlTextColor
-        leftTextField.frame = NSRect(x: leadingOffset, y: 3, width: 120, height: itemHeight - 6)
+        leftTextField.frame = NSRect(x: leadingOffset, y: 3, width: 100, height: itemHeight - 6)
         view.addSubview(leftTextField)
         
-        let rabbitWidth: CGFloat = paceInfo.status == .tooFast ? 18 : 0
-        let dotWidth: CGFloat = statusDotSize + 4
-        let predictPrefix = "Predict: "
-        let predictPercent = paceInfo.predictText
+        let hasTooFast = paceInfo.status == .tooFast
+        var rightEdge = menuWidth - trailingMargin
         
+        if hasTooFast {
+            let rabbitView = createRunningRabbitView()
+            rabbitView.frame = NSRect(x: rightEdge - 14, y: 3, width: 14, height: 16)
+            view.addSubview(rabbitView)
+            rightEdge -= 18
+        }
+        
+        let dotY: CGFloat = (itemHeight - statusDotSize) / 2
+        let dotImageView = NSImageView(frame: NSRect(x: rightEdge - statusDotSize, y: dotY, width: statusDotSize, height: statusDotSize))
+        if let dotImage = NSImage(systemSymbolName: "circle.fill", accessibilityDescription: "Status") {
+            let config = NSImage.SymbolConfiguration(pointSize: statusDotSize, weight: .regular)
+            dotImageView.image = dotImage.withSymbolConfiguration(config)
+            dotImageView.contentTintColor = paceInfo.status.color
+        }
+        view.addSubview(dotImageView)
+        rightEdge -= (statusDotSize + 6)
+        
+        let rightTextField = NSTextField(labelWithString: "")
         let rightAttributedString = NSMutableAttributedString()
-        let prefixAttributes: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: fontSize),
-            .foregroundColor: NSColor.disabledControlTextColor
-        ]
-        rightAttributedString.append(NSAttributedString(string: predictPrefix, attributes: prefixAttributes))
-        
-        let percentAttributes: [NSAttributedString.Key: Any] = [
-            .font: NSFont.boldSystemFont(ofSize: fontSize),
-            .foregroundColor: paceInfo.status.color
-        ]
-        rightAttributedString.append(NSAttributedString(string: predictPercent, attributes: percentAttributes))
-        
-        let rightTextWidth = rightAttributedString.size().width + 2
-        let rightTextX = menuWidth - trailingMargin - rabbitWidth - dotWidth - rightTextWidth
-        
-        let rightTextField = NSTextField(frame: NSRect(x: rightTextX, y: 3, width: rightTextWidth, height: itemHeight - 6))
+        rightAttributedString.append(NSAttributedString(
+            string: "Predict: ",
+            attributes: [.font: NSFont.systemFont(ofSize: fontSize), .foregroundColor: NSColor.disabledControlTextColor]
+        ))
+        rightAttributedString.append(NSAttributedString(
+            string: paceInfo.predictText,
+            attributes: [.font: NSFont.boldSystemFont(ofSize: fontSize), .foregroundColor: paceInfo.status.color]
+        ))
         rightTextField.attributedStringValue = rightAttributedString
         rightTextField.isBezeled = false
         rightTextField.isEditable = false
         rightTextField.isSelectable = false
         rightTextField.drawsBackground = false
-        rightTextField.alignment = .right
+        rightTextField.sizeToFit()
+        rightTextField.frame = NSRect(x: rightEdge - rightTextField.frame.width, y: 3, width: rightTextField.frame.width, height: itemHeight - 6)
         view.addSubview(rightTextField)
-        
-        let dotX = menuWidth - trailingMargin - rabbitWidth - statusDotSize
-        let dotY: CGFloat = (itemHeight - statusDotSize) / 2
-        let dotImageView = NSImageView(frame: NSRect(x: dotX, y: dotY, width: statusDotSize, height: statusDotSize))
-        if let dotImage = NSImage(systemSymbolName: "circle.fill", accessibilityDescription: "Status") {
-            let config = NSImage.SymbolConfiguration(pointSize: statusDotSize, weight: .regular)
-            let configuredImage = dotImage.withSymbolConfiguration(config)
-            dotImageView.image = configuredImage
-            dotImageView.contentTintColor = paceInfo.status.color
-        }
-        view.addSubview(dotImageView)
-        
-        if paceInfo.status == .tooFast {
-            let rabbitView = createRunningRabbitView()
-            rabbitView.frame = NSRect(x: menuWidth - trailingMargin - 14, y: 3, width: 14, height: 16)
-            view.addSubview(rabbitView)
-        }
         
         return view
     }
