@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <strong>Monitor multiple AI provider usage (Copilot, Claude, Codex, Gemini CLI) in real-time from the macOS menu bar.</strong>
+  <strong>Monitor multiple AI provider usage (Copilot, Claude, Codex, Gemini CLI, OpenRouter, OpenCode Zen, and more) in real-time from the macOS menu bar.</strong>
 </p>
 
 <p align="center">
@@ -24,12 +24,12 @@
 ## Features
 
 ### Multi-Provider Support
-- **4 AI Providers**: GitHub Copilot, Anthropic Claude, OpenAI Codex, Google Gemini CLI
+- **8 AI Providers**: GitHub Copilot, Anthropic Claude, OpenAI Codex, Google Gemini CLI, OpenRouter, OpenCode, OpenCode Zen, Antigravity
 - **Unified Dashboard**: View all providers in a single menu dropdown
 - **Provider Toggle**: Enable/disable individual providers in Settings
 - **Smart Categorization**: 
-  - Pay-as-you-go providers (Codex) show utilization %
-  - Quota-based providers (Copilot, Claude, Gemini CLI) show remaining quota %
+  - Pay-as-you-go providers (OpenRouter, OpenCode, OpenCode Zen, Antigravity) show utilization %
+  - Quota-based providers (Copilot, Claude, Codex, Gemini CLI) show remaining quota %
 
 ### Monitoring & Alerts
 - **Real-time Menu Bar Display**: View current usage and limits directly from the menu bar icon
@@ -168,6 +168,8 @@ The app tracks your daily usage to provide smart predictions:
 | **Claude** | OpenCode auth token | `https://api.anthropic.com/api/oauth/usage` | Quota-based (7-day window) |
 | **Codex** | OpenCode auth token | `https://chatgpt.com/backend-api/wham/usage` | Quota-based utilization |
 | **Gemini CLI** | OpenCode OAuth token | `https://cloudcode-pa.googleapis.com/v1internal:retrieveUserQuota` | Quota-based (per-model buckets) |
+| **OpenRouter** | OpenCode auth token | `https://openrouter.ai/api/v1/credits` | Pay-as-you-go with credits |
+| **+ 3 more** | OpenCode auth tokens | Various endpoints | Pay-as-you-go models |
 
 ### Architecture
 
