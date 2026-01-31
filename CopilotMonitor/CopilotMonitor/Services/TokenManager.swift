@@ -172,6 +172,17 @@ final class TokenManager {
         return accounts.accounts[accounts.activeIndex].refreshToken
     }
     
+    /// Gets Gemini account email from Antigravity accounts (active account)
+    /// - Returns: Email string if available, nil otherwise
+    func getGeminiAccountEmail() -> String? {
+        guard let accounts = readAntigravityAccounts() else { return nil }
+        guard accounts.activeIndex >= 0 && accounts.activeIndex < accounts.accounts.count else {
+            logger.warning("Invalid activeIndex: \(accounts.activeIndex)")
+            return nil
+        }
+        return accounts.accounts[accounts.activeIndex].email
+    }
+    
     // MARK: - Gemini OAuth Token Refresh
     
     /// Refreshes Gemini OAuth access token using refresh token

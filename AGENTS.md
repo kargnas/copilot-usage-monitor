@@ -146,10 +146,17 @@
        - Cache Validation: Check date before using cached data to avoid stale information
        - Sequential Internal Loading: Each provider can load history day-by-day sequentially with caching making it acceptable
        - Pattern: Load cache → fetch recent → merge → save updated cache
-    - **Multiline Text Handling in Custom Views**:
-       - Long Path Truncation: Displaying long file paths or URLs in disabled label views can cause content truncation
-       - Pattern: Add `multiline` parameter to custom view creation functions
-       - Dynamic Height Calculation: When multiline is enabled, calculate view height based on text content size
-       - Implementation: `string.boundingRect(with: size, options: .usesLineFragmentOrigin, attributes: context)`
-       - Example: 'Token From:' display showing full auth file path instead of truncated version
-         <!-- opencode:reflection:end -->
+     - **Multiline Text Handling in Custom Views**:
+        - Long Path Truncation: Displaying long file paths or URLs in disabled label views can cause content truncation
+        - Pattern: Add `multiline` parameter to custom view creation functions
+        - Dynamic Height Calculation: When multiline is enabled, calculate view height based on text content size
+        - Implementation: `string.boundingRect(with: size, options: .usesLineFragmentOrigin, attributes: context)`
+        - Example: 'Token From:' display showing full auth file path instead of truncated version
+    - **Progressive Loading Race Condition Prevention**:
+       - Loading State Must Precede Cleanup: Set loading state BEFORE any cleanup or killing logic
+       - Race Condition Pattern: Multiple fetch calls check state (not loading), spawn tasks, then all call `killExistingOpenCodeProcesses()` before state is set
+       - Symptom: Logs show repeated "Killed existing processes" and "Starting progressive fetch" messages
+       - Fix: Move loading state assignment to start of function, before any cleanup operations
+       - Or: Add second state check after cleanup to ensure only one instance proceeds
+       - Pattern: `isLoading = true` → `killExistingProcesses()` → proceed with fetch
+          <!-- opencode:reflection:end -->

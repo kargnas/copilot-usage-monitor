@@ -38,7 +38,8 @@ final class GeminiCLIProvider: ProviderProtocol {
     /// - Returns: ProviderResult with remaining quota percentage (worst-case across all models)
     /// - Throws: ProviderError if fetch fails
     func fetch() async throws -> ProviderResult {
-        // Refresh OAuth access token using stored refresh token
+        let userEmail = tokenManager.getGeminiAccountEmail()
+        
         guard let accessToken = try await tokenManager.refreshGeminiAccessTokenFromStorage() else {
             logger.error("Failed to refresh Gemini access token")
             throw ProviderError.authenticationFailed("Unable to refresh Gemini OAuth token")
@@ -120,6 +121,7 @@ final class GeminiCLIProvider: ProviderProtocol {
             // Create DetailedUsage with per-model breakdown
             let details = DetailedUsage(
                 modelBreakdown: modelBreakdown,
+                email: userEmail,
                 authSource: "~/.config/opencode/antigravity-accounts.json"
             )
             return ProviderResult(usage: usage, details: details)

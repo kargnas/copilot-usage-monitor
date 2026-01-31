@@ -11,8 +11,6 @@ final class StatusBarController: NSObject {
     private var statusItem: NSStatusItem!
     private var statusBarIconView: StatusBarIconView!
     private var menu: NSMenu!
-    private var usageItem: NSMenuItem!
-    private var usageView: UsageMenuItemView!
     private var signInItem: NSMenuItem!
     private var resetLoginItem: NSMenuItem!
     private var launchAtLoginItem: NSMenuItem!
@@ -123,14 +121,6 @@ final class StatusBarController: NSObject {
     
     private func setupMenu() {
         menu = NSMenu()
-        
-        usageView = UsageMenuItemView(frame: NSRect(x: 0, y: 0, width: 220, height: 68))
-        usageView.showLoading()
-        usageItem = NSMenuItem()
-        usageItem.view = usageView
-        menu.addItem(usageItem)
-        
-        menu.addItem(NSMenuItem.separator())
         
         historyMenuItem = NSMenuItem(title: "Usage History", action: nil, keyEquivalent: "")
         historyMenuItem.image = NSImage(systemSymbolName: "chart.bar.fill", accessibilityDescription: "Usage History")
@@ -333,7 +323,6 @@ final class StatusBarController: NSObject {
         isFetching = true
         debugLog("fetchUsage: showing loading")
         statusBarIconView.showLoading()
-        usageView.showLoading()
         
         debugLog("fetchUsage: creating Task")
         Task { @MainActor in
@@ -731,18 +720,29 @@ final class StatusBarController: NSObject {
                  debugLog("updateMultiProviderMenu: calling createCopilotHistorySubmenu")
                  historyItem.submenu = createCopilotHistorySubmenu()
                  debugLog("updateMultiProviderMenu: createCopilotHistorySubmenu completed")
-                 submenu.addItem(historyItem)
-                
-                submenu.addItem(NSMenuItem.separator())
-                let authItem = NSMenuItem()
-                authItem.view = createDisabledLabelView(
-                    text: "Token From: Browser Cookies (Chrome/Brave/Arc/Edge)",
-                    icon: NSImage(systemSymbolName: "key", accessibilityDescription: "Auth Source"),
-                    multiline: true
-                )
-                submenu.addItem(authItem)
-                
-                addOnItem.submenu = submenu
+                  submenu.addItem(historyItem)
+                 
+                 submenu.addItem(NSMenuItem.separator())
+                 
+                 if let email = providerResults[.copilot]?.details?.email {
+                     let emailItem = NSMenuItem()
+                     emailItem.view = createDisabledLabelView(
+                         text: "Email: \(email)",
+                         icon: NSImage(systemSymbolName: "person.circle", accessibilityDescription: "User Email"),
+                         multiline: false
+                     )
+                     submenu.addItem(emailItem)
+                 }
+                 
+                 let authItem = NSMenuItem()
+                 authItem.view = createDisabledLabelView(
+                     text: "Token From: Browser Cookies (Chrome/Brave/Arc/Edge)",
+                     icon: NSImage(systemSymbolName: "key", accessibilityDescription: "Auth Source"),
+                     multiline: true
+                 )
+                 submenu.addItem(authItem)
+                 
+                 addOnItem.submenu = submenu
                 
                 menu.insertItem(addOnItem, at: insertIndex)
                 insertIndex += 1
@@ -844,6 +844,17 @@ final class StatusBarController: NSObject {
               submenu.addItem(freeItem)
               
               submenu.addItem(NSMenuItem.separator())
+              
+              if let email = providerResults[.copilot]?.details?.email {
+                  let emailItem = NSMenuItem()
+                  emailItem.view = createDisabledLabelView(
+                      text: "Email: \(email)",
+                      icon: NSImage(systemSymbolName: "person.circle", accessibilityDescription: "User Email"),
+                      multiline: false
+                  )
+                  submenu.addItem(emailItem)
+              }
+              
               let authItem = NSMenuItem()
               authItem.view = createDisabledLabelView(
                   text: "Token From: Browser Cookies (Chrome/Brave/Arc/Edge)",
@@ -1120,7 +1131,6 @@ final class StatusBarController: NSObject {
           // Menu bar shows total Pay-as-you-go cost (Copilot Add-on + OpenRouter + OpenCode Zen + etc.)
           let totalPayAsYouGoCost = calculatePayAsYouGoTotal(providerResults: providerResults, copilotUsage: usage)
           statusBarIconView.update(used: usage.usedRequests, limit: usage.limitRequests, cost: totalPayAsYouGoCost)
-          usageView.update(usage: usage)
           signInItem.isHidden = true
           updateHistorySubmenu()
           updateMultiProviderMenu()
@@ -1128,13 +1138,11 @@ final class StatusBarController: NSObject {
     
     private func updateUIForLoggedOut() {
         statusBarIconView.showError()
-        usageView.showError("Sign in required")
         signInItem.isHidden = false
     }
     
     private func handleFetchError(_ error: Error) {
         statusBarIconView.showError()
-        usageView.showError("Update Failed")
     }
     
     @objc private func signInClicked() {

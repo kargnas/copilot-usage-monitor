@@ -189,6 +189,15 @@ extension StatusBarController {
                     submenu.addItem(item)
                 }
             }
+            if let email = details.email {
+                submenu.addItem(NSMenuItem.separator())
+                let item = NSMenuItem()
+                item.view = createDisabledLabelView(
+                    text: "Email: \(email)",
+                    icon: NSImage(systemSymbolName: "person.circle", accessibilityDescription: "User Email")
+                )
+                submenu.addItem(item)
+            }
             
         case .antigravity:
             if let models = details.modelBreakdown, !models.isEmpty {

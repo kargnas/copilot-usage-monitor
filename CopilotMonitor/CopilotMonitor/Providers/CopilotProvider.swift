@@ -14,6 +14,7 @@ final class CopilotProvider: ProviderProtocol {
     
     private let webView: WKWebView
     private let cacheKey = "cached_copilot_usage"
+    private var cachedUserEmail: String?
     
     /// Initialize with WebView for API access
     /// - Parameter webView: WebView instance from AuthManager for authenticated requests
@@ -29,16 +30,18 @@ final class CopilotProvider: ProviderProtocol {
     func fetch() async throws -> ProviderResult {
         logger.info("CopilotProvider: Starting fetch")
         
+        await fetchUserEmail()
+        
         guard let customerId = await fetchCustomerId() else {
             logger.warning("CopilotProvider: Failed to get customer ID, trying cache")
-            return try loadCachedUsage()
+            return try loadCachedUsageWithEmail()
         }
         
         logger.info("CopilotProvider: Customer ID obtained - \(customerId)")
         
         guard let usage = await fetchUsageData(customerId: customerId) else {
             logger.warning("CopilotProvider: Failed to fetch usage data, trying cache")
-            return try loadCachedUsage()
+            return try loadCachedUsageWithEmail()
         }
         
         saveCache(usage: usage)
@@ -65,6 +68,7 @@ final class CopilotProvider: ProviderProtocol {
         return ProviderResult(
             usage: providerUsage,
             details: DetailedUsage(
+                email: cachedUserEmail,
                 dailyHistory: dailyHistory,
                 authSource: "Browser Cookies (Chrome/Brave/Arc/Edge)"
             )
@@ -94,7 +98,47 @@ final class CopilotProvider: ProviderProtocol {
         return nil
     }
     
-    /// Fetch customer ID from GitHub API endpoint
+    /// Fetch user email from GitHub API
+    private func fetchUserEmail() async {
+        logger.info("CopilotProvider: Fetching user email")
+        
+        let userApiJS = """
+        return await (async function() {
+            try {
+                const response = await fetch('/api/v3/user', {
+                    headers: { 'Accept': 'application/json' }
+                });
+                if (!response.ok) return JSON.stringify({ error: 'HTTP ' + response.status });
+                const data = await response.json();
+                return JSON.stringify(data);
+            } catch (e) {
+                return JSON.stringify({ error: e.toString() });
+            }
+        })()
+        """
+        
+        do {
+            let result = try await webView.callAsyncJavaScript(userApiJS, arguments: [:], in: nil, contentWorld: .defaultClient)
+            
+            if let jsonString = result as? String,
+               let data = jsonString.data(using: .utf8),
+               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                
+                let email = json["email"] as? String
+                let login = json["login"] as? String
+                
+                if let userEmail = email ?? login {
+                    self.cachedUserEmail = userEmail
+                    logger.info("CopilotProvider: User email obtained - \(userEmail)")
+                }
+            }
+        } catch {
+            logger.error("CopilotProvider: Failed to fetch email - \(error.localizedDescription)")
+        }
+    }
+    
+    /// Fetch customer ID and user info from GitHub API endpoint
+    /// Also extracts email and login for display purposes
     private func fetchCustomerIdFromAPI() async -> String? {
         logger.info("CopilotProvider: [Step 1] Trying API (/api/v3/user)")
         
@@ -120,6 +164,15 @@ final class CopilotProvider: ProviderProtocol {
                let data = jsonString.data(using: .utf8),
                let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                let id = json["id"] as? Int {
+                
+                let email = json["email"] as? String
+                let login = json["login"] as? String
+                
+                if let userEmail = email ?? login {
+                    self.cachedUserEmail = userEmail
+                    logger.info("CopilotProvider: User info obtained - \(userEmail)")
+                }
+                
                 logger.info("CopilotProvider: API ID obtained - \(id)")
                 return String(id)
             }
@@ -343,5 +396,33 @@ final class CopilotProvider: ProviderProtocol {
             overagePermitted: true
         )
         return ProviderResult(usage: providerUsage, details: nil)
+    }
+    
+    /// Load cached usage data with email and convert to ProviderResult
+    /// - Throws: ProviderError.providerError if no cache available
+    private func loadCachedUsageWithEmail() throws -> ProviderResult {
+        guard let data = UserDefaults.standard.data(forKey: cacheKey),
+              let cached = try? JSONDecoder().decode(CachedUsage.self, from: data) else {
+            logger.error("CopilotProvider: No cached data available")
+            throw ProviderError.providerError("No cached data available")
+        }
+        
+        let usage = cached.usage
+        let remaining = usage.limitRequests - usage.usedRequests
+        
+        logger.info("CopilotProvider: Using cached data from \(cached.timestamp)")
+        
+        let providerUsage = ProviderUsage.quotaBased(
+            remaining: remaining,
+            entitlement: usage.limitRequests,
+            overagePermitted: true
+        )
+        return ProviderResult(
+            usage: providerUsage,
+            details: DetailedUsage(
+                email: cachedUserEmail,
+                authSource: "Browser Cookies (Chrome/Brave/Arc/Edge)"
+            )
+        )
     }
 }
