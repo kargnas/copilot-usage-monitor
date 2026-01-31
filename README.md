@@ -1,11 +1,12 @@
-# Copilot Monitor
+# OpenCode Usage Monitor
 
 <p align="center">
-  <img src="docs/screenshot.jpeg" alt="Copilot Monitor Screenshot" width="480">
+  <img src="docs/screenshot2.png" alt="OpenCode Usage Monitor Screenshot" width="40%">
+  <img src="docs/screenshot3.png" alt="OpenCode Usage Monitor Screenshot" width="40%">
 </p>
 
 <p align="center">
-  <strong>Monitor your GitHub Copilot premium request usage in real-time from the macOS menu bar.</strong>
+  <strong>Automatically monitor all your AI provider usage from OpenCode in real-time from the macOS menu bar.</strong>
 </p>
 
 <p align="center">
@@ -21,15 +22,44 @@
 
 ---
 
+## Overview
+
+**OpenCode Usage Monitor** automatically detects and monitors all AI providers registered in your [OpenCode](https://opencode.ai) configuration. No manual setup required - just install and see your usage across all providers in one unified dashboard.
+
+### Supported Providers (Auto-detected from OpenCode)
+
+| Provider | Type | Key Metrics |
+|----------|------|-------------|
+| **Claude** | Quota-based | 5h/7d usage windows, Sonnet/Opus breakdown |
+| **Codex** | Quota-based | Primary/Secondary quotas, plan type |
+| **Gemini CLI** | Quota-based | Per-model quotas, multi-account support |
+| **OpenRouter** | Pay-as-you-go | Credits balance, daily/weekly/monthly cost |
+| **OpenCode Zen** | Pay-as-you-go | Daily history (30 days), model breakdown |
+| **Antigravity** | Pay-as-you-go | Local language server monitoring |
+| **GitHub Copilot** | Quota-based | Daily history, overage tracking, EOM prediction |
+
 ## Features
 
-- **Real-time Menu Bar Display**: View current usage and limits directly from the menu bar icon
-- **Visual Progress Indicator**: Color changes based on usage (green → yellow → orange → red)
-- **Usage History & Prediction**: Track daily usage and predict end-of-month totals with estimated costs
-- **Add-on Cost Tracking**: Shows additional costs when exceeding the limit
-- **Auto Refresh**: Configurable auto-update intervals from 10 seconds to 30 minutes
-- **Launch at Login**: Option to automatically start on macOS login
-- **GitHub OAuth Authentication**: Secure WebView-based login
+### Automatic Provider Detection
+- **Zero Configuration**: Reads your `~/.local/share/opencode/auth.json` automatically
+- **Dynamic Updates**: New providers appear as you add them to OpenCode
+- **Smart Categorization**: Pay-as-you-go vs Quota-based providers displayed separately
+
+### Real-time Monitoring
+- **Menu Bar Dashboard**: View all provider usage at a glance
+- **Visual Indicators**: Color-coded progress (green → yellow → orange → red)
+- **Quota Alerts**: Warning icons when remaining quota < 20%
+- **Detailed Submenus**: Click any provider for in-depth metrics
+
+### Usage History & Predictions (Copilot)
+- **Daily Tracking**: View request counts and overage costs
+- **EOM Prediction**: Estimates end-of-month totals using weighted averages
+- **Add-on Cost Tracking**: Shows additional costs when exceeding limits
+
+### Convenience
+- **Auto Refresh**: Configurable intervals (10 seconds to 30 minutes)
+- **Launch at Login**: Start automatically with macOS
+- **Parallel Fetching**: All providers update simultaneously for speed
 
 ## Installation
 
@@ -39,90 +69,73 @@ Download the latest `.dmg` file from the [**Releases**](https://github.com/kargn
 
 > **Note**: If you see a "App is damaged" error, run this command in Terminal:
 > ```bash
-> xattr -cr /Applications/CopilotMonitor.app
+> xattr -cr "/Applications/CopilotMonitor.app"
 > ```
 
-### Build from Source (Xcode)
+### Build from Source
 
 ```bash
 # Clone the repository
 git clone https://github.com/kargnas/copilot-usage-monitor.git
 cd copilot-usage-monitor
 
-# Open in Xcode
-open CopilotMonitor/CopilotMonitor.xcodeproj
+# Build and run
+xcodebuild -project CopilotMonitor/CopilotMonitor.xcodeproj \
+  -scheme CopilotMonitor -configuration Debug build
 
-# Build (⌘B) and Run (⌘R) in Xcode
-```
-
-### Build from Source (CLI)
-
-For development without Xcode GUI (e.g., using VS Code, Cursor, or other editors):
-
-```bash
-# Kill existing process, build, and run
-pkill -x CopilotMonitor; xcodebuild -project CopilotMonitor/CopilotMonitor.xcodeproj -scheme CopilotMonitor -configuration Debug build && open ~/Library/Developer/Xcode/DerivedData/CopilotMonitor-*/Build/Products/Debug/CopilotMonitor.app
-```
-
-Or step by step:
-
-```bash
-# 1. Kill existing process (if running)
-pkill -x CopilotMonitor
-
-# 2. Build
-xcodebuild -project CopilotMonitor/CopilotMonitor.xcodeproj -scheme CopilotMonitor -configuration Debug build
-
-# 3. Run
-open ~/Library/Developer/Xcode/DerivedData/CopilotMonitor-*/Build/Products/Debug/CopilotMonitor.app
+# Open the app
+open ~/Library/Developer/Xcode/DerivedData/CopilotMonitor-*/Build/Products/Debug/*.app
 ```
 
 **Requirements:**
 - macOS 13.0+
-- Xcode 15.0+ (Command Line Tools required)
-- Swift 5.9+
+- Xcode 15.0+ (for building from source)
+- [OpenCode](https://opencode.ai) installed with authenticated providers
 
 ## Usage
 
-1. **Launch the app**: Run `CopilotMonitor.app`
-2. **Sign in**: Click "Sign In" from the menu and log in with your GitHub account
-3. **Monitor**: Check your real-time usage from the menu bar
+1. **Install OpenCode**: Make sure you have OpenCode installed and authenticated with your providers
+2. **Launch the app**: Run OpenCode Usage Monitor
+3. **View usage**: Click the menu bar icon to see all your provider usage
+4. **GitHub Copilot** (optional): Click "Sign In" to add Copilot monitoring via GitHub OAuth
 
-### Menu Options
+### Menu Structure
 
-| Menu Item | Description | Shortcut |
-|-----------|-------------|----------|
-| Usage History | View daily history and end-of-month predictions | - |
-| Refresh | Manually refresh usage data | `⌘R` |
-| Auto Refresh | Set auto-refresh interval (10s~30min) | - |
-| Open Billing | Open GitHub billing page | `⌘B` |
-| Launch at Login | Toggle auto-start on login | - |
-| Quit | Quit the app | `⌘Q` |
-
-### Usage History & Prediction
-
-The app tracks your daily usage to provide smart predictions:
-
-- **📈 Predicted EOM**: Estimates your total requests by the end of the month based on recent patterns
-- **💸 Predicted Add-on**: Warns you if you're likely to exceed your plan limit and incur extra costs
-- **⚙️ Prediction Period**: Configure the prediction algorithm to use the last 7, 14, or 21 days of data (weighted average)
-- **Daily Log**: View your request count for the past 7 days
+```
+─────────────────────────────
+Pay-as-you-go
+  OpenRouter       $37.42    ▸
+  OpenCode Zen     $0.19     ▸
+─────────────────────────────
+Quota Status
+  Copilot          0%        ▸
+  Claude           60%       ▸
+  Codex            100%      ▸
+  Gemini CLI (#1)  100%      ▸
+─────────────────────────────
+Predicted EOM: $451
+─────────────────────────────
+Refresh (⌘R)
+Auto Refresh              ▸
+Settings                  ▸
+─────────────────────────────
+Version 2.0.0
+Quit (⌘Q)
+```
 
 ## How It Works
 
-Copilot Monitor fetches usage data using GitHub's internal API:
+1. **Token Discovery**: Reads authentication tokens from OpenCode's `auth.json`
+2. **Parallel Fetching**: Queries all provider APIs simultaneously
+3. **Smart Caching**: Falls back to cached data on network errors
+4. **Graceful Degradation**: Shows available providers even if some fail
 
-1. **Authentication**: GitHub OAuth authentication via WebView
-2. **Data Collection**: Calls the `/settings/billing/copilot_usage_card` API
-3. **Caching**: Uses cached data when network errors occur
+### Privacy & Security
 
-> **Note**: This app uses GitHub's internal web API, not the official GitHub API. Functionality may change based on GitHub UI updates.
-
-## Privacy & Security
-
-- **Local Storage**: All data is stored locally only
-- **Direct Communication**: Communicates directly with GitHub servers without third-party intermediaries
-- **OAuth Authentication**: Uses GitHub OAuth session without storing passwords
+- **Local Only**: All data stays on your machine
+- **No Third-party Servers**: Direct communication with provider APIs
+- **Read-only Access**: Uses existing OpenCode tokens (no additional permissions)
+- **Secure Storage**: GitHub Copilot uses OAuth session without storing passwords
 
 ## Contributing
 
@@ -140,11 +153,11 @@ MIT License - See [LICENSE](LICENSE) file for details.
 
 ## Related
 
+- [OpenCode](https://opencode.ai) - The AI coding assistant that powers this monitor
 - [GitHub Copilot](https://github.com/features/copilot)
-- [Copilot Billing Documentation](https://docs.github.com/en/billing/managing-billing-for-github-copilot)
 
 ---
 
 <p align="center">
-  Made with ❤️ for Copilot power users
+  Made with tiredness for AI power users
 </p>

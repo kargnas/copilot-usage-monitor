@@ -1,110 +1,76 @@
 {
-  "version": "2.0.0",
-  "tasks": [
-    {
-      "label": "Build (Debug)",
-      "type": "shell",
-      "command": "xcodebuild",
-      "args": [
-        "-project", "${workspaceFolder}/CopilotMonitor/CopilotMonitor.xcodeproj",
-        "-scheme", "CopilotMonitor",
-        "-configuration", "Debug",
-        "build"
-      ],
-      "group": {
-        "kind": "build",
-        "isDefault": true
-      },
-      "presentation": {
-        "reveal": "always",
-        "panel": "new"
-      },
-      "problemMatcher": ["$xcodebuild"]
-    },
-    {
-      "label": "Build (Release)",
-      "type": "shell",
-      "command": "xcodebuild",
-      "args": [
-        "-project", "${workspaceFolder}/CopilotMonitor/CopilotMonitor.xcodeproj",
-        "-scheme", "CopilotMonitor",
-        "-configuration", "Release",
-        "build"
-      ],
-      "group": "build",
-      "presentation": {
-        "reveal": "always",
-        "panel": "new"
-      },
-      "problemMatcher": ["$xcodebuild"]
-    },
-    {
-      "label": "Clean Build",
-      "type": "shell",
-      "command": "xcodebuild",
-      "args": [
-        "-project", "${workspaceFolder}/CopilotMonitor/CopilotMonitor.xcodeproj",
-        "-scheme", "CopilotMonitor",
-        "clean"
-      ],
-      "group": "build",
-      "presentation": {
-        "reveal": "always",
-        "panel": "new"
-      },
-      "problemMatcher": []
-    },
-    {
-      "label": "Kill, Build & Run",
-      "type": "shell",
-      "command": "pkill -x CopilotMonitor || true; xcodebuild -project ${workspaceFolder}/CopilotMonitor/CopilotMonitor.xcodeproj -scheme CopilotMonitor -configuration Debug build && open ~/Library/Developer/Xcode/DerivedData/CopilotMonitor-*/Build/Products/Debug/CopilotMonitor.app",
-      "group": "build",
-      "presentation": {
-        "reveal": "always",
-        "panel": "shared"
-      },
-      "problemMatcher": ["$xcodebuild"]
-    },
-    {
-      "label": "Run SwiftLint",
-      "type": "shell",
-      "command": "swiftlint",
-      "args": ["lint", "--reporter", "xcode"],
-      "options": {
-        "cwd": "${workspaceFolder}/CopilotMonitor/CopilotMonitor"
-      },
-      "group": "test",
-      "presentation": {
-        "reveal": "always",
-        "panel": "new"
-      },
-      "problemMatcher": {
-        "owner": "swiftlint",
-        "fileLocation": "absolute",
-        "pattern": {
-          "regexp": "^(.+):(\\d+):(\\d+):\\s+(warning|error):\\s+(.+)$",
-          "file": 1,
-          "line": 2,
-          "column": 3,
-          "severity": 4,
-          "message": 5
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "☠️ Kill CopilotMonitor",
+            "type": "shell",
+            "command": "pkill -x CopilotMonitor || true",
+            "presentation": {
+                "reveal": "silent",
+                "close": true
+            }
+        },
+        {
+            "label": "🔨 Build CopilotMonitor",
+            "type": "shell",
+            "command": "xcodebuild",
+            "args": [
+                "-project", "CopilotMonitor/CopilotMonitor.xcodeproj",
+                "-scheme", "CopilotMonitor",
+                "-configuration", "Debug",
+                "build"
+            ],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "presentation": {
+                "reveal": "always",
+                "panel": "shared"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "🔄 Kill + Build CopilotMonitor",
+            "dependsOn": ["☠️ Kill CopilotMonitor", "🔨 Build CopilotMonitor"],
+            "dependsOrder": "sequence",
+            "group": "build",
+            "problemMatcher": []
+        },
+        {
+            "label": "▶️ Run CopilotMonitor",
+            "type": "shell",
+            "command": "open ~/Library/Developer/Xcode/DerivedData/CopilotMonitor-*/Build/Products/Debug/CopilotMonitor.app",
+            "presentation": {
+                "reveal": "silent",
+                "close": true
+            }
+        },
+        {
+            "label": "🐛 Debug: Kill + Build + Run",
+            "type": "shell",
+            "command": "pkill -x CopilotMonitor 2>/dev/null; xcodebuild -project CopilotMonitor/CopilotMonitor.xcodeproj -scheme CopilotMonitor -configuration Debug build && ~/Library/Developer/Xcode/DerivedData/CopilotMonitor-*/Build/Products/Debug/CopilotMonitor.app/Contents/MacOS/CopilotMonitor",
+            "group": "test",
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated",
+                "focus": true,
+                "clear": true
+            },
+            "isBackground": false,
+            "problemMatcher": []
+        },
+        {
+            "label": "📜 Debug: Watch Logs",
+            "type": "shell",
+            "command": "log stream --predicate 'subsystem == \"com.opencodeproviders\"' --level debug",
+            "presentation": {
+                "reveal": "always",
+                "panel": "new",
+                "focus": false
+            },
+            "isBackground": true,
+            "problemMatcher": []
         }
-      }
-    },
-    {
-      "label": "Validate GitHub Actions",
-      "type": "shell",
-      "command": "actionlint",
-      "args": [".github/workflows/*.yml"],
-      "options": {
-        "cwd": "${workspaceFolder}"
-      },
-      "group": "test",
-      "presentation": {
-        "reveal": "always",
-        "panel": "new"
-      },
-      "problemMatcher": []
-    }
-  ]
+    ]
 }

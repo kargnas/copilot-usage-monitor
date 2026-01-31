@@ -7,7 +7,7 @@ enum UsageFetcherError: LocalizedError {
     case invalidJSResult
     case parsingFailed(String)
     case networkError(Error)
-    
+
     var errorDescription: String? {
         switch self {
         case .noCustomerId:
@@ -30,7 +30,7 @@ final class UsageFetcher {
         let usage = try await fetchUsageData(from: webView, customerId: customerId)
         return usage
     }
-    
+
     private static func extractCustomerId(from webView: WKWebView) async throws -> String {
         print("Extracting Customer ID...")
         let js = """
@@ -46,25 +46,25 @@ final class UsageFetcher {
             }
         })();
         """
-        
+
         let result = try await webView.callAsyncJavaScript(
             js,
             arguments: [:],
             in: nil,
             contentWorld: .page
         )
-        
+
         NSLog("JS Result for Customer ID: %@", String(describing: result))
-        
+
         guard let customerId = result as? String, !customerId.contains("_error"), customerId != "no_element", customerId != "no_id_in_json" else {
             NSLog("Failed to get Customer ID")
             throw UsageFetcherError.noCustomerId
         }
-        
+
         NSLog("Got Customer ID: %@", customerId)
         return customerId
     }
-    
+
     private static func fetchUsageData(from webView: WKWebView, customerId: String) async throws -> CopilotUsage {
         print("Fetching usage data for ID: \(customerId)...")
         let js = """
@@ -78,34 +78,34 @@ final class UsageFetcher {
             }
         })();
         """
-        
+
         let result = try await webView.callAsyncJavaScript(
             js,
             arguments: [:],
             in: nil,
             contentWorld: .page
         )
-        
+
         print("JS Result for Usage Data: \(String(describing: result))")
-        
+
         guard let dict = result as? [String: Any] else {
             print("Usage data result is not a dictionary")
             throw UsageFetcherError.noUsageData
         }
-        
+
         if let errorMsg = dict["error"] as? String {
             print("Server returned error: \(errorMsg)")
             throw UsageFetcherError.parsingFailed(errorMsg)
         }
-        
+
         let netBilledAmount = (dict["netBilledAmount"] as? Double) ?? (dict["netBilledAmount"] as? Int).map { Double($0) } ?? (dict["netBilledAmount"] as? NSNumber)?.doubleValue ?? 0.0
         let netQuantity = (dict["netQuantity"] as? Double) ?? (dict["netQuantity"] as? Int).map { Double($0) } ?? (dict["netQuantity"] as? NSNumber)?.doubleValue ?? 0.0
         let discountQuantity = (dict["discountQuantity"] as? Double) ?? (dict["discountQuantity"] as? Int).map { Double($0) } ?? (dict["discountQuantity"] as? NSNumber)?.doubleValue ?? 0.0
         let userPremiumRequestEntitlement = (dict["userPremiumRequestEntitlement"] as? Int) ?? (dict["userPremiumRequestEntitlement"] as? Double).map { Int($0) } ?? (dict["userPremiumRequestEntitlement"] as? NSNumber)?.intValue ?? 0
         let filteredUserPremiumRequestEntitlement = (dict["filteredUserPremiumRequestEntitlement"] as? Int) ?? (dict["filteredUserPremiumRequestEntitlement"] as? Double).map { Int($0) } ?? (dict["filteredUserPremiumRequestEntitlement"] as? NSNumber)?.intValue ?? 0
-        
+
         print("Parsed values: discountQuantity=\(discountQuantity), userPremiumRequestEntitlement=\(userPremiumRequestEntitlement)")
-        
+
         let usage = CopilotUsage(
             netBilledAmount: netBilledAmount,
             netQuantity: netQuantity,
@@ -113,7 +113,7 @@ final class UsageFetcher {
             userPremiumRequestEntitlement: userPremiumRequestEntitlement,
             filteredUserPremiumRequestEntitlement: filteredUserPremiumRequestEntitlement
         )
-        
+
         print("Successfully created usage object")
         return usage
     }

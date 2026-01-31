@@ -2,12 +2,12 @@ import Foundation
 import WebKit
 import os.log
 
-private let logger = Logger(subsystem: "com.copilotmonitor", category: "AuthManager")
+private let logger = Logger(subsystem: "com.opencodeproviders", category: "AuthManager")
 
 @MainActor
 final class AuthManager: NSObject {
     static let shared = AuthManager()
-    
+
     private var _webView: WKWebView?
     var webView: WKWebView {
         logger.info("webView getter 호출됨")
@@ -25,39 +25,39 @@ final class AuthManager: NSObject {
         }
         return view
     }
-    
+
     private var isCheckingLogin = false
-    
+
     private let allowedDomains = [
         "github.com",
         "githubassets.com",
         "githubusercontent.com"
     ]
-    
+
     private override init() {
         logger.info("init 시작")
         super.init()
         logger.info("init 완료")
     }
-    
+
     private func setupWebView() {
         logger.info("setupWebView 시작")
         guard _webView == nil else {
             logger.info("setupWebView: 이미 webView 존재, 스킵")
             return
         }
-        
+
         logger.info("WKWebViewConfiguration 생성")
         let config = WKWebViewConfiguration()
         config.websiteDataStore = .default()
-        
+
         logger.info("WKWebView 생성 중...")
         _webView = WKWebView(frame: .zero, configuration: config)
         logger.info("WKWebView 생성됨: \(String(describing: self._webView))")
         _webView?.navigationDelegate = self
         logger.info("navigationDelegate 설정 완료")
     }
-    
+
     func loadBillingPage() {
         logger.info("loadBillingPage 호출됨, isCheckingLogin: \(self.isCheckingLogin)")
         guard !isCheckingLogin else {
@@ -65,7 +65,7 @@ final class AuthManager: NSObject {
             return
         }
         isCheckingLogin = true
-        
+
         // Copilot 사용량 상세 페이지로 직접 이동 (세션 갱신 및 컨텍스트 확보)
         let url = URL(string: "https://github.com/settings/billing/premium_requests_usage")!
         logger.info("loadBillingPage: URL 로드 시작 - \(url.absoluteString)")
@@ -75,7 +75,7 @@ final class AuthManager: NSObject {
         wv.load(URLRequest(url: url))
         logger.info("loadBillingPage: 로드 요청 완료")
     }
-    
+
     func loadLoginPage() {
         logger.info("loadLoginPage 호출됨")
         let url = URL(string: "https://github.com/login")!
@@ -102,14 +102,14 @@ final class AuthManager: NSObject {
 extension AuthManager: WKNavigationDelegate {
     nonisolated func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
         let url = navigationAction.request.url
-        let loggerLocal = Logger(subsystem: "com.copilotmonitor", category: "AuthManager")
+        let loggerLocal = Logger(subsystem: "com.opencodeproviders", category: "AuthManager")
         loggerLocal.info("decidePolicyFor: \(url?.absoluteString ?? "nil")")
         guard let host = url?.host else {
             loggerLocal.info("decidePolicyFor: host 없음, cancel")
             decisionHandler(.cancel)
             return
         }
-        
+
         let isAllowed = [
             "github.com",
             "githubassets.com",
@@ -118,43 +118,43 @@ extension AuthManager: WKNavigationDelegate {
         loggerLocal.info("decidePolicyFor: host=\(host), allowed=\(isAllowed)")
         decisionHandler(isAllowed ? .allow : .cancel)
     }
-    
+
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         logger.info("didFinish: navigation=\(String(describing: navigation), privacy: .public)")
         let urlString = webView.url?.absoluteString ?? "nil"
         logger.info("didFinish: webView.url=\(urlString, privacy: .public)")
         isCheckingLogin = false
-        
+
         guard let url = webView.url else {
             logger.info("didFinish: url이 nil")
             return
         }
-        
+
         logger.info("didFinish: path=\(url.path, privacy: .public)")
         if url.path.contains("/login") || url.path.contains("/session") {
             logger.info("didFinish: 로그인 페이지 감지, sessionExpired 노티 발송")
             NotificationCenter.default.post(name: Notification.Name("sessionExpired"), object: nil)
             return
         }
-        
+
         if url.path.contains("/settings/billing") {
             logger.info("didFinish: billing 페이지 감지, billingPageLoaded 노티 발송")
             NotificationCenter.default.post(name: Notification.Name("billingPageLoaded"), object: nil)
             return
         }
-        
+
         // 대시보드(홈) 접근 시 Billing 페이지로 이동하여 customerId 확보
         if url.path == "/" {
             logger.info("didFinish: 대시보드 감지, Billing 페이지로 이동 (customerId 확보용)")
             loadBillingPage()
         }
     }
-    
+
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
         logger.error("didFail: error=\(error.localizedDescription)")
         isCheckingLogin = false
     }
-    
+
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
         logger.error("didFailProvisionalNavigation: error=\(error.localizedDescription)")
         isCheckingLogin = false
