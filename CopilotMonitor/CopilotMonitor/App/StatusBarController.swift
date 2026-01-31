@@ -774,11 +774,9 @@ final class StatusBarController: NSObject {
                    }
                 } else if loadingProviders.contains(identifier) {
                     hasPayAsYouGo = true
-                    let item = NSMenuItem()
-                    item.view = createDisabledLabelView(
-                        text: "\(identifier.displayName)    Loading...",
-                        icon: iconForProvider(identifier)
-                    )
+                    let item = NSMenuItem(title: "\(identifier.displayName)    Loading...", action: nil, keyEquivalent: "")
+                    item.image = iconForProvider(identifier)
+                    item.isEnabled = false
                     item.tag = 999
                     menu.insertItem(item, at: insertIndex)
                     insertIndex += 1
@@ -890,16 +888,14 @@ final class StatusBarController: NSObject {
                         insertIndex += 1
                     }
                  } else if loadingProviders.contains(identifier) {
-                     hasQuota = true
-                     let item = NSMenuItem()
-                     item.view = createDisabledLabelView(
-                         text: "\(identifier.displayName)    Loading...",
-                         icon: iconForProvider(identifier)
-                     )
-                     item.tag = 999
-                     menu.insertItem(item, at: insertIndex)
-                     insertIndex += 1
-                 }
+                      hasQuota = true
+                      let item = NSMenuItem(title: "\(identifier.displayName)    Loading...", action: nil, keyEquivalent: "")
+                      item.image = iconForProvider(identifier)
+                      item.isEnabled = false
+                      item.tag = 999
+                      menu.insertItem(item, at: insertIndex)
+                      insertIndex += 1
+                  }
              }
             
             if isProviderEnabled(.geminiCLI) {
@@ -929,11 +925,9 @@ final class StatusBarController: NSObject {
                     }
                 } else if loadingProviders.contains(.geminiCLI) {
                     hasQuota = true
-                    let item = NSMenuItem()
-                    item.view = createDisabledLabelView(
-                        text: "Gemini CLI    Loading...",
-                        icon: iconForProvider(.geminiCLI)
-                    )
+                    let item = NSMenuItem(title: "Gemini CLI    Loading...", action: nil, keyEquivalent: "")
+                    item.image = iconForProvider(.geminiCLI)
+                    item.isEnabled = false
                     item.tag = 999
                     menu.insertItem(item, at: insertIndex)
                     insertIndex += 1

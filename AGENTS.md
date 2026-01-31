@@ -20,6 +20,12 @@
 - **Exception**:
   - While you can't use color for text, progress bars and status indicators can use system color.
   - You can use color for text which is right-aligned text only.
+- Others
+  - **Never use random spaces for separating label**
+    - OK: "OpenRouter: $37.42"
+    - OK: "OpenRouter ($37.42)"
+    - OK: "OpenRouter", Additional Label on the right: "$37.42"
+    - NO: "OpenRouter    $37.42" (stupid random spaces)
 
 ### Menu Item Layout Constants (MUST follow strictly)
 All custom menu item views MUST use these exact pixel values for consistency:
@@ -201,4 +207,10 @@ let rightElementX: CGFloat = menuWidth - trailingMargin - iconSize  // = 270
         3. Use `indent` parameter instead of spaces for horizontal indentation
       - Pattern: Match exactly what `createDisabledLabelView` does internally
       - Example Fix: Pace row changed from `frame.y = 3` to `centerYAnchor.constraint(equalTo: view.centerYAnchor)`
+    - **Text Truncation in Custom Menu Views**:
+       - Fixed-Width Problem: Hard-coding text field widths causes truncation for dynamic content (file paths, URLs, long labels)
+       - Solution: Use `NSTextField.sizeToFit()` to calculate exact text width before positioning elements
+       - Layout Pattern: Position elements from right edge (using `rightElementX`) moving left to accommodate variable-width text
+       - Pattern: Right-to-left layout prevents text overflow while maintaining alignment with fixed elements
+
           <!-- opencode:reflection:end -->
