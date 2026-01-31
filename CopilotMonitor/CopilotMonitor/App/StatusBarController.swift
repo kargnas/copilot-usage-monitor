@@ -871,6 +871,11 @@ final class StatusBarController: NSObject {
         let separator3 = NSMenuItem.separator()
         separator3.tag = 999
         menu.insertItem(separator3, at: insertIndex)
+        
+        if let usage = currentUsage {
+            let totalCost = calculatePayAsYouGoTotal(providerResults: providerResults, copilotUsage: usage)
+            statusBarIconView.update(used: usage.usedRequests, limit: usage.limitRequests, cost: totalCost)
+        }
         debugLog("updateMultiProviderMenu: completed successfully")
     }
     
@@ -1019,7 +1024,9 @@ final class StatusBarController: NSObject {
     }
     
       private func updateUIForSuccess(usage: CopilotUsage) {
-          statusBarIconView.update(used: usage.usedRequests, limit: usage.limitRequests, cost: usage.netBilledAmount)
+          // Menu bar shows total Pay-as-you-go cost (Copilot Add-on + OpenRouter + OpenCode Zen + etc.)
+          let totalPayAsYouGoCost = calculatePayAsYouGoTotal(providerResults: providerResults, copilotUsage: usage)
+          statusBarIconView.update(used: usage.usedRequests, limit: usage.limitRequests, cost: totalPayAsYouGoCost)
           usageView.update(usage: usage)
           signInItem.isHidden = true
           updateHistorySubmenu()
