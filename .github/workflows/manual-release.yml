@@ -174,9 +174,9 @@ jobs:
           cp -R "$RUNNER_TEMP/export/CopilotMonitor.app" "$DMG_STAGING/"
           ln -s /Applications "$DMG_STAGING/Applications"
           
-          create-dmg \
-            --volname "OpenCode Usage Monitor" \
-            --window-pos 200 120 \
+           create-dmg \
+             --volname "OpenCode Bar" \
+             --window-pos 200 120 \
             --window-size 500 320 \
             --icon-size 80 \
             --icon "CopilotMonitor.app" 125 175 \
@@ -188,10 +188,10 @@ jobs:
           if [ -f "$DMG_NAME" ]; then
             codesign --force --sign "Developer ID Application" "$DMG_NAME"
             echo "DMG created and signed: $DMG_NAME"
-          else
-            echo "create-dmg failed, falling back to hdiutil..."
-            hdiutil create -volname "OpenCode Usage Monitor ${VERSION}" \
-              -srcfolder "$DMG_STAGING" \
+           else
+             echo "create-dmg failed, falling back to hdiutil..."
+             hdiutil create -volname "OpenCode Bar ${VERSION}" \
+               -srcfolder "$DMG_STAGING" \
               -ov -format UDZO \
               "$DMG_NAME"
             codesign --force --sign "Developer ID Application" "$DMG_NAME"
@@ -257,12 +257,12 @@ jobs:
           
           DMG_SIZE=$(stat -f%z "$DMG_NAME")
           
-          cat > appcast.xml << EOF
-          <?xml version="1.0" encoding="utf-8"?>
-          <rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" xmlns:dc="http://purl.org/dc/elements/1.1/">
-            <channel>
-              <title>OpenCode Usage Monitor Updates</title>
-              <link>https://github.com/kargnas/copilot-usage-monitor/releases/latest/download/appcast.xml</link>
+           cat > appcast.xml << EOF
+           <?xml version="1.0" encoding="utf-8"?>
+           <rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" xmlns:dc="http://purl.org/dc/elements/1.1/">
+             <channel>
+               <title>OpenCode Bar Updates</title>
+               <link>https://github.com/kargnas/copilot-usage-monitor/releases/latest/download/appcast.xml</link>
               <description>Most recent changes with links to updates.</description>
               <language>en</language>
               <item>
@@ -298,12 +298,12 @@ jobs:
           git tag ${{ steps.new_version.outputs.new_version }}
           git push origin HEAD:main --follow-tags
       
-      - name: Create Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ steps.new_version.outputs.new_version }}
-          name: OpenCode Usage Monitor ${{ steps.new_version.outputs.new_version }}
-          draft: false
+       - name: Create Release
+         uses: softprops/action-gh-release@v2
+         with:
+           tag_name: ${{ steps.new_version.outputs.new_version }}
+           name: OpenCode Bar ${{ steps.new_version.outputs.new_version }}
+           draft: false
           prerelease: ${{ inputs.prerelease }}
           files: |
             OpenCodeUsageMonitor-${{ steps.new_version.outputs.new_version }}.dmg
