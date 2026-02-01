@@ -257,28 +257,26 @@ jobs:
           
           DMG_SIZE=$(stat -f%z "$DMG_NAME")
           
-           cat > appcast.xml << EOF
-           <?xml version="1.0" encoding="utf-8"?>
-           <rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" xmlns:dc="http://purl.org/dc/elements/1.1/">
-             <channel>
-               <title>OpenCode Bar Updates</title>
-                <link>https://github.com/kargnas/opencode-bar/releases/latest/download/appcast.xml</link>
-              <description>Most recent changes with links to updates.</description>
-              <language>en</language>
-              <item>
-                <title>Version ${VERSION#v}</title>
-                <pubDate>$(date -R)</pubDate>
-                <sparkle:version>${VERSION#v}</sparkle:version>
-                <sparkle:shortVersionString>${VERSION#v}</sparkle:shortVersionString>
-                <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
-                <enclosure url="${DOWNLOAD_URL}"
-                           sparkle:edSignature="${SIGNATURE}"
-                           length="${DMG_SIZE}"
-                           type="application/octet-stream"/>
-              </item>
-            </channel>
-          </rss>
-          EOF
+          printf '%s\n' '<?xml version="1.0" encoding="utf-8"?>' \
+            '<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" xmlns:dc="http://purl.org/dc/elements/1.1/">' \
+            '  <channel>' \
+            '    <title>OpenCode Bar Updates</title>' \
+            '    <link>https://github.com/kargnas/opencode-bar/releases/latest/download/appcast.xml</link>' \
+            '    <description>Most recent changes with links to updates.</description>' \
+            '    <language>en</language>' \
+            '    <item>' \
+            "      <title>Version ${VERSION#v}</title>" \
+            "      <pubDate>$(date -R)</pubDate>" \
+            "      <sparkle:version>${VERSION#v}</sparkle:version>" \
+            "      <sparkle:shortVersionString>${VERSION#v}</sparkle:shortVersionString>" \
+            '      <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>' \
+            "      <enclosure url=\"${DOWNLOAD_URL}\"" \
+            "                 sparkle:edSignature=\"${SIGNATURE}\"" \
+            "                 length=\"${DMG_SIZE}\"" \
+            '                 type="application/octet-stream"/>' \
+            '    </item>' \
+            '  </channel>' \
+            '</rss>' > appcast.xml
           
           rm -f "$RUNNER_TEMP/sparkle_key"
           echo "Appcast.xml generated successfully"

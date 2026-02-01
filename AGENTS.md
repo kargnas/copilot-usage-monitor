@@ -345,12 +345,20 @@ func buildProviderSubmenu() -> [NSMenuItem] {
       - Alignment Benefits: Standard NSMenuItem aligns perfectly with regular menu items, avoiding custom view pixel mismatches
       - Pattern: `let item = NSMenuItem(title: "Loading...", action: nil, keyEquivalent: ""); item.isEnabled = false`
       - Example Fix: Pay-as-you-go, Quota Status, and Gemini CLI loading items unified to use standard NSMenuItem
-   - **SwiftUI MenuBarExtra + AppKit NSStatusItem Duplication**:
-      - Problem: Using both SwiftUI `MenuBarExtra` AND creating `NSStatusItem` directly causes TWO menu bar icons
-      - Root Cause: Each approach independently creates a status bar item
-      - Solution: Use ONLY ONE approach - either SwiftUI MenuBarExtra with bridge, or pure AppKit NSStatusItem
-      - Current Pattern: SwiftUI MenuBarExtra with `isInserted: $isMenuEnabled` set to `false`, AppKit NSStatusItem handles everything
-      - Anti-Pattern: Creating `NSStatusBar.system.statusItem()` while also using `MenuBarExtra { }`
-      - Example Fix: Set `@State private var isMenuEnabled = false` and use `MenuBarExtra(isInserted: $isMenuEnabled)`
+    - **SwiftUI MenuBarExtra + AppKit NSStatusItem Duplication**:
+       - Problem: Using both SwiftUI `MenuBarExtra` AND creating `NSStatusItem` directly causes TWO menu bar icons
+       - Root Cause: Each approach independently creates a status bar item
+       - Solution: Use ONLY ONE approach - either SwiftUI MenuBarExtra with bridge, or pure AppKit NSStatusItem
+       - Current Pattern: SwiftUI MenuBarExtra with `isInserted: $isMenuEnabled` set to `false`, AppKit NSStatusItem handles everything
+       - Anti-Pattern: Creating `NSStatusBar.system.statusItem()` while also using `MenuBarExtra { }`
+       - Example Fix: Set `@State private var isMenuEnabled = false` and use `MenuBarExtra(isInserted: $isMenuEnabled)`
+    - **GitHub Actions YAML Indentation Syntax Errors**:
+       - Strict Indentation Rules: YAML is whitespace-sensitive and incorrect indentation causes workflow failures
+       - Common Mistake: Excessive indentation makes steps appear nested incorrectly (e.g., 14 spaces instead of 6)
+       - Validation: GitHub Actions checks YAML syntax before execution and reports indentation errors
+       - Pattern: Each job step should be at consistent indentation level (typically 6 spaces for top-level job steps)
+       - Example Fix: Fixed `- name: Create Release` step indentation from 14 spaces to 6 spaces
+       - Affected Files: `build-release.yml`, `manual-release.yml` when adding release steps
+       - Prevention: Use YAML linters or validate syntax with `yamllint` before committing
 
              <!-- opencode:reflection:end -->
