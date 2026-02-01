@@ -9,7 +9,6 @@ actor CopilotCLIProvider: ProviderProtocol {
     let identifier: ProviderIdentifier = .copilot
     let type: ProviderType = .quotaBased
     
-    private let cacheKey = "cached_copilot_usage_cli"
     private var cachedCustomerId: String?
     
     // MARK: - ProviderProtocol Implementation

@@ -276,7 +276,7 @@ struct ListCommand: ParsableCommand {
     var json: Bool = false
     
     mutating func run() throws {
-        let providers = ProviderIdentifier.allCases
+        let providers = CLIProviderManager.registeredProviders
         
         if json {
             let providerList = providers.map { provider in
@@ -420,9 +420,9 @@ struct ProviderCommand: ParsableCommand {
         }
         
         if fetchFailed {
-            let stderr = FileHandle.standardError
-            let message = "Error: Failed to fetch provider data\n"
-            stderr.write(Data(message.utf8))
+            if let output = output {
+                print(output)
+            }
             Foundation.exit(CLIExitCode.generalError.rawValue)
         }
         

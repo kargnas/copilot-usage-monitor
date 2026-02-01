@@ -81,8 +81,7 @@ struct TableFormatter {
         switch result.usage {
         case .payAsYouGo:
             return String(format: "%.1f%%", percentage)
-        case .quotaBased(let remaining, let entitlement, _):
-            let used = entitlement - remaining
+        case .quotaBased(_, _, _):
             return String(format: "%.0f%%", percentage)
         }
     }
@@ -108,8 +107,6 @@ struct TableFormatter {
             return metrics
             
         case .quotaBased(let remaining, let entitlement, let overagePermitted):
-            let used = entitlement - remaining
-            
             if remaining >= 0 {
                 return "\(remaining)/\(entitlement) remaining"
             } else {

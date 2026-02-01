@@ -8,11 +8,14 @@ private let logger = Logger(subsystem: "com.opencodeproviders", category: "CLIPr
 actor CLIProviderManager {
     // MARK: - Properties
     
-    /// All registered providers (7 shared + 1 CLI-specific = 8 total)
-    private let providers: [ProviderProtocol]
+    private let providers: [any ProviderProtocol]
     
-    /// Timeout for individual provider fetch operations (10 seconds)
     private let fetchTimeout: TimeInterval = 10.0
+    
+    static let registeredProviders: [ProviderIdentifier] = [
+        .claude, .codex, .geminiCLI, .openRouter, 
+        .antigravity, .openCodeZen, .kimi, .copilot
+    ]
     
     // MARK: - Initialization
     

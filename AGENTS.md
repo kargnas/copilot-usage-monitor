@@ -422,19 +422,18 @@ func buildProviderSubmenu() -> [NSMenuItem] {
         - Root Cause: No debouncing mechanism to prevent concurrent or rapid successive update requests
         - Solution: Implement debounce timer or check if update is already in progress before triggering new rebuild
         - Pattern: `updatePending = false` → schedule update → check `!updatePending` before proceeding → set `updatePending = true`
-<<<<<<< HEAD
    - **Cache Effectiveness for Progressive Loading**:
         - Initial Fetch Pattern: OpenCode Zen fetches 30 days progressively (~3 minutes total: 30 days × 4-6 seconds each)
         - Cache Threshold: 1-hour cache window appropriate for usage data that changes infrequently
         - Cache Success: Subsequent fetches show "(cached)" for all days, instant response
          - Pattern: Hybrid approach (fetch recent + cache older) reduces API calls by 71%+
          - Optimization: Ensure cache validation uses UTC calendar to match cache storage format
-      - **GitHub Actions Workflow Input Handling**:
-         - Event Type Dependencies: Workflow inputs may not be available on all event types
-         - Example Failure: `inputs.version` undefined on push/PR events, causing workflow failure
-         - Solution: Use environment variable gating with `event_name` checks before accessing inputs
-         - Pattern: Check `github.event_name` to determine if dispatch event with manual inputs
-         - Prevention: Use conditional logic or provide default values for non-dispatch events
+   - **GitHub Actions Workflow Input Handling**:
+      - Event Type Dependencies: Workflow inputs may not be available on all event types
+      - Example Failure: `inputs.version` undefined on push/PR events, causing workflow failure
+      - Solution: Use environment variable gating with `event_name` checks before accessing inputs
+      - Pattern: Check `github.event_name` to determine if dispatch event with manual inputs
+      - Prevention: Use conditional logic or provide default values for non-dispatch events
    - **CLI Binary Bundle Embedding**:
       - Build Phase Requirement: CLI binaries must be embedded in app bundle via PBXCopyFilesBuildPhase, not just built alongside app
       - Error Pattern: "CLI binary not found at expected path in app bundle" when menu item tries to locate binary
@@ -443,5 +442,21 @@ func buildProviderSubmenu() -> [NSMenuItem] {
       - Code Signing: Set CodeSignOnCopy attribute on PBXBuildFile entry for CLI binary
       - Verification: Binary appears at CopilotMonitor.app/Contents/MacOS/opencodebar-cli with executable permissions
       - Pattern: Always test "Install CLI" menu item after build to verify binary accessibility
- 
- <!-- opencode:reflection:end -->
+   - **Progressive Loading Performance Optimization**:
+      - Problem: Each progressive loading step triggers full menu rebuild, causing UI flicker and performance degradation
+      - Symptom: Logs show repeated "updateMultiProviderMenu: started" with "Loading day X/30..." messages
+      - Root Cause: OpenCode Zen fetches 30 days sequentially, calling full menu update after each day
+      - Solution: Implement partial menu updates during progressive loading
+        - Update only the specific submenu item (e.g., "Loading day X/30...")
+        - Avoid rebuilding entire menu structure for incremental updates
+        - Use menu item references to update in-place instead of full rebuild
+      - Performance Impact: 30 days × full rebuild = ~30x slower than necessary
+      - Pattern: `updateLoadingProgress(dayIndex)` → update single loading item → `updateMenu()` only on completion
+   - **Debug Log Frequency Control**:
+      - Excessive Logging: `logMenuStructure()` called on every menu update produces massive log output
+      - Symptom: Logs show repeated identical menu structures hundreds of times during progressive loading
+      - Solution: Use debug guards or log level controls for verbose structure logging
+      - Pattern: `#if DEBUG logMenuStructure()` or move to trace-level logging instead of debug
+      - Recommendation: Disable structure logging after initial validation, enable only when debugging menu issues
+  
+  <!-- opencode:reflection:end -->
