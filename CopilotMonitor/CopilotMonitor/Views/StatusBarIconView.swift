@@ -18,7 +18,7 @@ final class StatusBarIconView: NSView {
     /// Dynamic width calculation based on content
     /// - Copilot icon (16px) + padding (6px) = 22px base
     /// - With add-on cost: icon + cost text width
-    /// - Without add-on cost: icon + circle (8px) + padding (4px) + number text width
+    /// - Without add-on cost: icon + "OC Bar" text width
     override var intrinsicContentSize: NSSize {
         let baseIconWidth = MenuDesignToken.Dimension.itemHeight // icon (16) + right padding (6)
 
@@ -29,11 +29,11 @@ final class StatusBarIconView: NSView {
             let textWidth = (costText as NSString).size(withAttributes: [.font: font]).width
             return NSSize(width: baseIconWidth + textWidth + 4, height: 23)
         } else {
-            // Circle (8px) + padding (4px) + number text width
-            let text = isLoading ? "..." : (hasError ? "Err" : "\(usedCount)")
-            let font = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .medium)
+            // "OC Bar" text width
+            let text = isLoading ? "..." : (hasError ? "Err" : "OC Bar")
+            let font = NSFont.systemFont(ofSize: 11, weight: .medium)
             let textWidth = (text as NSString).size(withAttributes: [.font: font]).width
-            return NSSize(width: baseIconWidth + 8 + 4 + textWidth + 4, height: 23)
+            return NSSize(width: baseIconWidth + textWidth + 4, height: 23)
         }
     }
 
@@ -74,9 +74,7 @@ final class StatusBarIconView: NSView {
         if addOnCost > 0 {
             drawCostText(at: NSPoint(x: 22, y: yOffset), color: color)
         } else {
-            let progressRect = NSRect(x: 22, y: yOffset + 4, width: 8, height: 8)
-            drawCircularProgress(in: progressRect, color: color)
-            drawUsageText(at: NSPoint(x: 34, y: yOffset), color: color)
+            drawOpencodeBarText(at: NSPoint(x: 22, y: yOffset), color: color)
         }
     }
 
@@ -134,6 +132,27 @@ final class StatusBarIconView: NSView {
         progressPath.stroke()
     }
 
+    private func drawOpencodeBarText(at origin: NSPoint, color: NSColor) {
+        let text: String
+
+        if isLoading {
+            text = "..."
+        } else if hasError {
+            text = "Err"
+        } else {
+            text = "OC Bar"
+        }
+
+        let font = NSFont.systemFont(ofSize: 11, weight: .medium)
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: font,
+            .foregroundColor: color
+        ]
+
+        let attrString = NSAttributedString(string: text, attributes: attributes)
+        attrString.draw(at: origin)
+    }
+    
     private func drawUsageText(at origin: NSPoint, color: NSColor) {
         let text: String
 
