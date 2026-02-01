@@ -71,31 +71,74 @@ final class TokenManager {
 
     // MARK: - OpenCode Auth File Reading
 
-    /// Reads OpenCode auth tokens from ~/.local/share/opencode/auth.json
-    /// - Returns: OpenCodeAuth structure if file exists and is valid, nil otherwise
-    func readOpenCodeAuth() -> OpenCodeAuth? {
+    /// Possible auth.json locations in priority order:
+    /// 1. $XDG_DATA_HOME/opencode/auth.json (if XDG_DATA_HOME is set)
+    /// 2. ~/.local/share/opencode/auth.json (XDG default, used by OpenCode)
+    /// 3. ~/Library/Application Support/opencode/auth.json (macOS convention fallback)
+    func getAuthFilePaths() -> [URL] {
         let fileManager = FileManager.default
         let homeDir = fileManager.homeDirectoryForCurrentUser
-        let authPath = homeDir
+        var paths: [URL] = []
+
+        // 1. XDG_DATA_HOME (highest priority if set)
+        if let xdgDataHome = ProcessInfo.processInfo.environment["XDG_DATA_HOME"], !xdgDataHome.isEmpty {
+            let xdgPath = URL(fileURLWithPath: xdgDataHome)
+                .appendingPathComponent("opencode")
+                .appendingPathComponent("auth.json")
+            paths.append(xdgPath)
+        }
+
+        // 2. ~/.local/share/opencode/auth.json (XDG default - OpenCode's primary location)
+        let xdgDefaultPath = homeDir
             .appendingPathComponent(".local")
             .appendingPathComponent("share")
             .appendingPathComponent("opencode")
             .appendingPathComponent("auth.json")
+        paths.append(xdgDefaultPath)
 
-        guard fileManager.fileExists(atPath: authPath.path) else {
-            logger.debug("OpenCode auth file not found at: \(authPath.path)")
-            return nil
+        // 3. ~/Library/Application Support/opencode/auth.json (macOS convention fallback)
+        let macOSPath = homeDir
+            .appendingPathComponent("Library")
+            .appendingPathComponent("Application Support")
+            .appendingPathComponent("opencode")
+            .appendingPathComponent("auth.json")
+        paths.append(macOSPath)
+
+        return paths
+    }
+
+    /// Returns the path where auth.json was found, or nil if not found
+    /// Useful for displaying in UI to help users troubleshoot
+    private(set) var lastFoundAuthPath: URL?
+
+    /// Reads OpenCode auth tokens with fallback paths
+    /// Tries multiple locations in priority order until a valid auth.json is found
+    /// - Returns: OpenCodeAuth structure if file exists and is valid, nil otherwise
+    func readOpenCodeAuth() -> OpenCodeAuth? {
+        let fileManager = FileManager.default
+        let paths = getAuthFilePaths()
+
+        for authPath in paths {
+            guard fileManager.fileExists(atPath: authPath.path) else {
+                logger.debug("Auth file not found at: \(authPath.path)")
+                continue
+            }
+
+            do {
+                let data = try Data(contentsOf: authPath)
+                let auth = try JSONDecoder().decode(OpenCodeAuth.self, from: data)
+                lastFoundAuthPath = authPath
+                logger.info("Successfully loaded OpenCode auth from: \(authPath.path)")
+                return auth
+            } catch {
+                logger.warning("Failed to parse auth at \(authPath.path): \(error.localizedDescription)")
+                continue
+            }
         }
 
-        do {
-            let data = try Data(contentsOf: authPath)
-            let auth = try JSONDecoder().decode(OpenCodeAuth.self, from: data)
-            logger.info("Successfully loaded OpenCode auth")
-            return auth
-        } catch {
-            logger.error("Failed to read OpenCode auth: \(error.localizedDescription)")
-            return nil
-        }
+        lastFoundAuthPath = nil
+        logger.error("No valid auth.json found in any location. Searched: \(paths.map { $0.path }.joined(separator: ", "))")
+        return nil
     }
 
     // MARK: - Antigravity Accounts File Reading
@@ -282,11 +325,6 @@ final class TokenManager {
 
     // MARK: - Debug Environment Info
 
-    /// Logs comprehensive debug information about auth files and tokens
-    /// Helps diagnose configuration issues by showing:
-    /// - File existence and line counts
-    /// - Directory contents
-    /// - Token presence and length (masked for security)
     func logDebugEnvironmentInfo() {
         let fileManager = FileManager.default
         let homeDir = fileManager.homeDirectoryForCurrentUser
@@ -294,27 +332,59 @@ final class TokenManager {
         var debugLines: [String] = []
         debugLines.append("========== Environment Debug Info ==========")
 
-        // 1. auth.json file check
-        let authPath = homeDir
-            .appendingPathComponent(".local")
-            .appendingPathComponent("share")
-            .appendingPathComponent("opencode")
-            .appendingPathComponent("auth.json")
-
-        if fileManager.fileExists(atPath: authPath.path) {
-            if let content = try? String(contentsOf: authPath, encoding: .utf8) {
-                let lineCount = content.components(separatedBy: .newlines).count
-                let byteCount = content.utf8.count
-                debugLines.append("[auth.json] EXISTS at \(authPath.path)")
-                debugLines.append("  - Lines: \(lineCount), Bytes: \(byteCount)")
-            } else {
-                debugLines.append("[auth.json] EXISTS but UNREADABLE at \(authPath.path)")
-            }
+        // 0. XDG_DATA_HOME environment variable
+        if let xdgDataHome = ProcessInfo.processInfo.environment["XDG_DATA_HOME"], !xdgDataHome.isEmpty {
+            debugLines.append("[XDG_DATA_HOME] SET: \(xdgDataHome)")
         } else {
-            debugLines.append("[auth.json] NOT FOUND at \(authPath.path)")
+            debugLines.append("[XDG_DATA_HOME] NOT SET (using default ~/.local/share)")
+        }
+
+        // 1. Check all possible auth.json paths (fallback order)
+        debugLines.append("---------- Auth File Search ----------")
+        let authPaths = getAuthFilePaths()
+        var foundAuthPath: URL?
+
+        for (index, authPath) in authPaths.enumerated() {
+            let priority = index + 1
+            let pathLabel: String
+            switch index {
+            case 0 where ProcessInfo.processInfo.environment["XDG_DATA_HOME"] != nil:
+                pathLabel = "$XDG_DATA_HOME/opencode"
+            case 0, 1:
+                pathLabel = "~/.local/share/opencode"
+            default:
+                pathLabel = "~/Library/Application Support/opencode"
+            }
+
+            if fileManager.fileExists(atPath: authPath.path) {
+                if let content = try? String(contentsOf: authPath, encoding: .utf8) {
+                    let lineCount = content.components(separatedBy: .newlines).count
+                    let byteCount = content.utf8.count
+                    let marker = foundAuthPath == nil ? "ACTIVE" : "SHADOWED"
+                    debugLines.append("[\(priority)] [\(marker)] \(pathLabel)/auth.json")
+                    debugLines.append("    Path: \(authPath.path)")
+                    debugLines.append("    Lines: \(lineCount), Bytes: \(byteCount)")
+                    if foundAuthPath == nil {
+                        foundAuthPath = authPath
+                    }
+                } else {
+                    debugLines.append("[\(priority)] [UNREADABLE] \(pathLabel)/auth.json")
+                    debugLines.append("    Path: \(authPath.path)")
+                }
+            } else {
+                debugLines.append("[\(priority)] [NOT FOUND] \(pathLabel)/auth.json")
+                debugLines.append("    Path: \(authPath.path)")
+            }
+        }
+
+        if let activePath = foundAuthPath {
+            debugLines.append("[Result] Using auth from: \(activePath.path)")
+        } else {
+            debugLines.append("[Result] NO VALID auth.json FOUND IN ANY LOCATION")
         }
 
         // 2. ~/.local/share/opencode directory contents
+        debugLines.append("---------- Directory Contents ----------")
         let opencodeDir = homeDir
             .appendingPathComponent(".local")
             .appendingPathComponent("share")
@@ -337,7 +407,30 @@ final class TokenManager {
             debugLines.append("[~/.local/share/opencode] NOT FOUND")
         }
 
-        // 3. ~/.config/opencode directory (antigravity-accounts.json)
+        // 3. ~/Library/Application Support/opencode directory (macOS fallback)
+        let macOSDir = homeDir
+            .appendingPathComponent("Library")
+            .appendingPathComponent("Application Support")
+            .appendingPathComponent("opencode")
+
+        if fileManager.fileExists(atPath: macOSDir.path) {
+            if let contents = try? fileManager.contentsOfDirectory(atPath: macOSDir.path) {
+                let fileCount = contents.filter { !$0.hasPrefix(".") }.count
+                debugLines.append("[~/Library/Application Support/opencode] EXISTS")
+                debugLines.append("  - Items: \(fileCount)")
+                for item in contents.sorted() {
+                    var isDir: ObjCBool = false
+                    let itemPath = macOSDir.appendingPathComponent(item).path
+                    fileManager.fileExists(atPath: itemPath, isDirectory: &isDir)
+                    let typeIndicator = isDir.boolValue ? "[DIR]" : "[FILE]"
+                    debugLines.append("    \(typeIndicator) \(item)")
+                }
+            }
+        } else {
+            debugLines.append("[~/Library/Application Support/opencode] NOT FOUND")
+        }
+
+        // 4. ~/.config/opencode directory (antigravity-accounts.json)
         let configDir = homeDir
             .appendingPathComponent(".config")
             .appendingPathComponent("opencode")
