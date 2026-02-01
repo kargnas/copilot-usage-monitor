@@ -66,38 +66,48 @@ actor ProviderManager {
     /// - Returns: Dictionary mapping provider identifiers to their result data
     /// - Note: Returns partial results if some providers fail (graceful degradation)
     func fetchAll() async -> [ProviderIdentifier: ProviderResult] {
-        logger.info("Starting parallel fetch for \(self.providers.count) providers")
+        logger.info("🔵 [ProviderManager] fetchAll() started - \(self.providers.count) providers")
+        self.debugLog("🔵 fetchAll() started - \(self.providers.count) providers")
 
         var results: [ProviderIdentifier: ProviderResult] = [:]
 
         // Use TaskGroup for parallel fetching with timeout
         await withTaskGroup(of: (ProviderIdentifier, ProviderResult?).self) { group in
             for provider in self.providers {
+                logger.debug("🟡 [ProviderManager] Adding fetch task for \(provider.identifier.displayName)")
+                self.debugLog("🟡 Adding fetch task for \(provider.identifier.displayName)")
+                
                 group.addTask { [weak self] in
                     guard let self = self else {
+                        logger.warning("🔴 [ProviderManager] Self deallocated for \(provider.identifier.displayName)")
                         return (provider.identifier, nil)
                     }
 
                     // Fetch with timeout
                     do {
+                        logger.debug("🟡 [ProviderManager] Fetching \(provider.identifier.displayName)")
                         let result = try await self.fetchWithTimeout(provider: provider)
 
                         // Cache successful result (async-safe using Task)
                         await self.updateCache(identifier: provider.identifier, result: result)
 
-                        logger.info("✓ \(provider.identifier.displayName) fetch succeeded")
-                        self.debugLog("✓ \(provider.identifier.displayName) fetch succeeded")
+                        logger.info("🟢 [ProviderManager] ✓ \(provider.identifier.displayName) fetch succeeded")
+                        self.debugLog("🟢 ✓ \(provider.identifier.displayName) fetch succeeded")
 
                         return (provider.identifier, result)
                     } catch {
-                        logger.error("✗ \(provider.identifier.displayName) fetch failed: \(error.localizedDescription)")
-                        self.debugLog("✗ \(provider.identifier.displayName) fetch failed: \(error.localizedDescription)")
+                        logger.error("🔴 [ProviderManager] ✗ \(provider.identifier.displayName) fetch failed: \(error.localizedDescription)")
+                        self.debugLog("🔴 ✗ \(provider.identifier.displayName) fetch failed: \(error.localizedDescription)")
 
                         // Try to use cached value as fallback
                         let cached = await self.getCache(identifier: provider.identifier)
 
                         if cached != nil {
-                            logger.warning("Using cached value for \(provider.identifier.displayName)")
+                            logger.warning("🟡 [ProviderManager] Using cached value for \(provider.identifier.displayName)")
+                            self.debugLog("🟡 Using cached value for \(provider.identifier.displayName)")
+                        } else {
+                            logger.warning("🔴 [ProviderManager] No cached value available for \(provider.identifier.displayName)")
+                            self.debugLog("🔴 No cached value available for \(provider.identifier.displayName)")
                         }
 
                         return (provider.identifier, cached)
@@ -106,14 +116,23 @@ actor ProviderManager {
             }
 
             // Collect results from all tasks
+            logger.debug("🟡 [ProviderManager] Collecting results from task group")
+            self.debugLog("🟡 Collecting results from task group")
+            
             for await (identifier, result) in group {
                 if let result = result {
                     results[identifier] = result
+                    logger.debug("🟢 [ProviderManager] Collected result for \(identifier.displayName)")
+                    self.debugLog("🟢 Collected result for \(identifier.displayName)")
+                } else {
+                    logger.warning("🔴 [ProviderManager] No result for \(identifier.displayName)")
+                    self.debugLog("🔴 No result for \(identifier.displayName)")
                 }
             }
         }
 
-        logger.info("Fetch completed: \(results.count)/\(self.providers.count) providers succeeded")
+        logger.info("🟢 [ProviderManager] fetchAll() completed: \(results.count)/\(self.providers.count) providers succeeded")
+        self.debugLog("🟢 fetchAll() completed: \(results.count)/\(self.providers.count) providers succeeded")
         return results
     }
 

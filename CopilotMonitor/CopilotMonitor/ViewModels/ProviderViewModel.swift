@@ -1,5 +1,6 @@
 import Foundation
 import Combine
+import os.log
 
 /// ViewModel managing multi-provider usage state
 /// Extracts state management from StatusBarController for modern SwiftUI architecture
@@ -29,26 +30,47 @@ final class ProviderViewModel: ObservableObject {
     /// Refreshes all provider data
     /// - Note: Updates loadingProviders during fetch for UI loading states
     func refresh() async {
+        let logger = Logger(subsystem: "com.opencodeproviders", category: "ProviderViewModel")
+        logger.info("🔵 [ProviderViewModel] refresh() started")
+        
         var enabledProviders: [ProviderIdentifier] = []
         for identifier in ProviderIdentifier.allCases {
             if await providerManager.getProvider(for: identifier) != nil {
                 enabledProviders.append(identifier)
             }
         }
-        loadingProviders = Set(enabledProviders)
+        let enabledNames = enabledProviders.map { $0.displayName }.joined(separator: ", ")
+        logger.debug("🔵 [ProviderViewModel] enabledProviders: \(enabledNames)")
+        
+        self.loadingProviders = Set(enabledProviders)
+        logger.debug("🟡 [ProviderViewModel] loadingProviders set to \(enabledProviders.count) providers")
         
         // Fetch all providers in parallel
+        logger.debug("🟡 [ProviderViewModel] Calling providerManager.fetchAll()")
         let results = await providerManager.fetchAll()
+        logger.info("🟢 [ProviderViewModel] fetchAll() returned \(results.count) results")
         
         // Update state
-        providerResults = results
-        lastUpdated = Date()
-        lastError = nil
-        totalOverageCost = await providerManager.calculateTotalOverageCost(from: providerResults)
-        quotaAlerts = await providerManager.getQuotaAlerts(from: providerResults)
+        self.providerResults = results
+        logger.debug("🟢 [ProviderViewModel] providerResults updated")
+        
+        self.lastUpdated = Date()
+        logger.debug("🟢 [ProviderViewModel] lastUpdated set")
+        
+        self.lastError = nil
+        logger.debug("🟢 [ProviderViewModel] lastError cleared")
+        
+        let cost = await providerManager.calculateTotalOverageCost(from: results)
+        self.totalOverageCost = cost
+        logger.debug("🟢 [ProviderViewModel] totalOverageCost calculated: $\(String(format: "%.2f", cost))")
+        
+        let alerts = await providerManager.getQuotaAlerts(from: results)
+        self.quotaAlerts = alerts
+        logger.debug("🟢 [ProviderViewModel] quotaAlerts: \(alerts.count) alerts")
         
         // Clear loading state
-        loadingProviders.removeAll()
+        self.loadingProviders.removeAll()
+        logger.info("🟢 [ProviderViewModel] refresh() completed - loadingProviders cleared")
     }
     
     // MARK: - Computed Properties for UI

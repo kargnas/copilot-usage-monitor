@@ -589,46 +589,59 @@ final class StatusBarController: NSObject {
 
     // MARK: - Multi-Provider Fetch
 
-      private func fetchMultiProviderData() async {
-          debugLog("fetchMultiProviderData: started")
-          let enabledProviders = await ProviderManager.shared.getAllProviders().filter { provider in
-              isProviderEnabled(provider.identifier) && provider.identifier != .copilot
-          }
-          debugLog("fetchMultiProviderData: enabledProviders count=\(enabledProviders.count)")
+     private func fetchMultiProviderData() async {
+           debugLog("🔵 fetchMultiProviderData: started")
+           logger.info("🔵 [StatusBarController] fetchMultiProviderData() started")
+           
+           let enabledProviders = await ProviderManager.shared.getAllProviders().filter { provider in
+               isProviderEnabled(provider.identifier) && provider.identifier != .copilot
+           }
+           debugLog("🔵 fetchMultiProviderData: enabledProviders count=\(enabledProviders.count)")
+           logger.debug("🔵 [StatusBarController] enabledProviders: \(enabledProviders.map { $0.identifier.displayName }.joined(separator: ", "))")
 
-          guard !enabledProviders.isEmpty else {
-              logger.info("fetchMultiProviderData: No enabled providers, skipping")
-              debugLog("fetchMultiProviderData: No enabled providers, returning")
-              return
-          }
+           guard !enabledProviders.isEmpty else {
+               logger.info("🟡 [StatusBarController] fetchMultiProviderData: No enabled providers, skipping")
+               debugLog("🟡 fetchMultiProviderData: No enabled providers, returning")
+               return
+           }
 
-          loadingProviders = Set(enabledProviders.map { $0.identifier })
-          debugLog("fetchMultiProviderData: marked \(loadingProviders.count) providers as loading")
-          updateMultiProviderMenu()
+           loadingProviders = Set(enabledProviders.map { $0.identifier })
+           let loadingCount = loadingProviders.count
+           let loadingNames = loadingProviders.map { $0.displayName }.joined(separator: ", ")
+           debugLog("🟡 fetchMultiProviderData: marked \(loadingCount) providers as loading")
+           logger.debug("🟡 [StatusBarController] loadingProviders set: \(loadingNames)")
+           updateMultiProviderMenu()
 
-          logger.info("fetchMultiProviderData: Fetching \(enabledProviders.count) providers")
-          debugLog("fetchMultiProviderData: calling ProviderManager.fetchAll()")
-          let results = await ProviderManager.shared.fetchAll()
-          debugLog("fetchMultiProviderData: fetchAll returned \(results.count) results")
+           logger.info("🟡 [StatusBarController] fetchMultiProviderData: Calling ProviderManager.fetchAll()")
+           debugLog("🟡 fetchMultiProviderData: calling ProviderManager.fetchAll()")
+           let results = await ProviderManager.shared.fetchAll()
+           debugLog("🟢 fetchMultiProviderData: fetchAll returned \(results.count) results")
+           logger.info("🟢 [StatusBarController] fetchMultiProviderData: fetchAll() returned \(results.count) results")
 
-          let filteredResults = results.filter { identifier, _ in
-              isProviderEnabled(identifier) && identifier != .copilot
-          }
-          debugLog("fetchMultiProviderData: filteredResults count=\(filteredResults.count)")
+           let filteredResults = results.filter { identifier, _ in
+               isProviderEnabled(identifier) && identifier != .copilot
+           }
+           let filteredNames = filteredResults.keys.map { $0.displayName }.joined(separator: ", ")
+           debugLog("🟢 fetchMultiProviderData: filteredResults count=\(filteredResults.count)")
+           logger.debug("🟢 [StatusBarController] filteredResults: \(filteredNames)")
 
-          for identifier in filteredResults.keys {
-              loadingProviders.remove(identifier)
-          }
-          debugLog("fetchMultiProviderData: cleared loading state for \(filteredResults.count) providers")
+           for identifier in filteredResults.keys {
+               loadingProviders.remove(identifier)
+           }
+           let remainingLoading = loadingProviders.map { $0.displayName }.joined(separator: ", ")
+           debugLog("🟢 fetchMultiProviderData: cleared loading state for \(filteredResults.count) providers")
+           logger.debug("🟢 [StatusBarController] loadingProviders after clear: \(remainingLoading)")
 
-          self.providerResults = filteredResults
-          debugLog("fetchMultiProviderData: calling updateMultiProviderMenu")
-          self.updateMultiProviderMenu()
-          debugLog("fetchMultiProviderData: updateMultiProviderMenu completed")
+           self.providerResults = filteredResults
+           debugLog("🟢 fetchMultiProviderData: calling updateMultiProviderMenu")
+           logger.debug("🟢 [StatusBarController] providerResults updated, calling updateMultiProviderMenu()")
+           self.updateMultiProviderMenu()
+           debugLog("🟢 fetchMultiProviderData: updateMultiProviderMenu completed")
+           logger.info("🟢 [StatusBarController] fetchMultiProviderData: updateMultiProviderMenu() completed")
 
-          logger.info("fetchMultiProviderData: Completed with \(filteredResults.count) results")
-          debugLog("fetchMultiProviderData: completed")
-      }
+           logger.info("🟢 [StatusBarController] fetchMultiProviderData: Completed with \(filteredResults.count) results")
+           debugLog("🟢 fetchMultiProviderData: completed")
+       }
 
     private func calculatePayAsYouGoTotal(providerResults: [ProviderIdentifier: ProviderResult], copilotUsage: CopilotUsage?) -> Double {
         var total = 0.0
