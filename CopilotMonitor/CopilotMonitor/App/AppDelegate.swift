@@ -15,6 +15,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     // Sparkle Updater Controller - 자동 업데이트 관리
     // XIB 없이 코드로 초기화해야 함 (Menu Bar 앱이므로)
     private(set) var updaterController: SPUStandardUpdaterController!
+    
+    private var updateCheckTimer: Timer?
 
     @objc func checkForUpdates() {
         logger.info("⌨️ [Keyboard] ⌘U Check for Updates triggered")
@@ -29,11 +31,46 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             updaterDelegate: nil,
             userDriverDelegate: nil
         )
+        
+        configureAutomaticUpdates()
 
         statusBarController = StatusBarController()
         setupNotificationObservers()
 
         closeAllWindows()
+        startUpdateCheckTimer()
+    }
+    
+    private func configureAutomaticUpdates() {
+        let updater = updaterController.updater
+        updater.automaticallyChecksForUpdates = true
+        updater.automaticallyDownloadsUpdates = true
+        updater.updateCheckInterval = 43200 // 12 hours
+        
+        logger.info("🔄 [Sparkle] Auto-update configured: checks=\(updater.automaticallyChecksForUpdates), downloads=\(updater.automaticallyDownloadsUpdates), interval=\(updater.updateCheckInterval)s")
+    }
+    
+    // Info.plist's SUScheduledCheckInterval may not trigger reliably for long-running Menu Bar apps
+    private func startUpdateCheckTimer() {
+        updateCheckTimer?.invalidate()
+        
+        let checkInterval: TimeInterval = 21600 // 6 hours
+        let initialDelay: TimeInterval = 30 // Allow app to finish launching
+        
+        DispatchQueue.main.asyncAfter(deadline: .now() + initialDelay) { [weak self] in
+            self?.performBackgroundUpdateCheck()
+        }
+        
+        updateCheckTimer = Timer.scheduledTimer(withTimeInterval: checkInterval, repeats: true) { [weak self] _ in
+            self?.performBackgroundUpdateCheck()
+        }
+        
+        logger.info("🔄 [Sparkle] Update check timer started: interval=\(checkInterval)s")
+    }
+    
+    private func performBackgroundUpdateCheck() {
+        logger.info("🔄 [Sparkle] Performing background update check...")
+        updaterController.updater.checkForUpdatesInBackground()
     }
 
     private func closeAllWindows() {
@@ -89,6 +126,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     deinit {
+        updateCheckTimer?.invalidate()
         if let observer = sessionExpiredObserver { NotificationCenter.default.removeObserver(observer) }
         if let observer = billingLoadedObserver { NotificationCenter.default.removeObserver(observer) }
     }
