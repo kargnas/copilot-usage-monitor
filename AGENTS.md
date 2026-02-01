@@ -8,12 +8,12 @@
 
 ### Branding Guides
 - Official Brand: `OpenCode Bar`
-  - Don't use `Opencode Bar`, `OpencodeBar`
+  - Don't use mis-capitalized forms like `Opencode Bar`, `OpencodeBar`.
 - File Name:
   - `OpenCode Bar` if it allows whitespace.
   - `OpenCode-Bar` if it allows dash.
-  - `opencode-bar` if it's better in lower case.
-  - `opencodebar` if it doesn't allow whitespace & dash.
+  - `opencode-bar` (all lowercase) if the environment prefers lowercase file names.
+  - `opencodebar` (all lowercase, no separators) if it doesn't allow whitespace or dashes.
 - Bundle ID: `com.copilotmonitor.CopilotMonitor`
 
 ### UI Styling Rules
