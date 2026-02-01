@@ -279,4 +279,213 @@ final class TokenManager {
 
         return await refreshGeminiAccessToken(refreshToken: refreshToken)
     }
+
+    // MARK: - Debug Environment Info
+
+    /// Logs comprehensive debug information about auth files and tokens
+    /// Helps diagnose configuration issues by showing:
+    /// - File existence and line counts
+    /// - Directory contents
+    /// - Token presence and length (masked for security)
+    func logDebugEnvironmentInfo() {
+        let fileManager = FileManager.default
+        let homeDir = fileManager.homeDirectoryForCurrentUser
+
+        var debugLines: [String] = []
+        debugLines.append("========== Environment Debug Info ==========")
+
+        // 1. auth.json file check
+        let authPath = homeDir
+            .appendingPathComponent(".local")
+            .appendingPathComponent("share")
+            .appendingPathComponent("opencode")
+            .appendingPathComponent("auth.json")
+
+        if fileManager.fileExists(atPath: authPath.path) {
+            if let content = try? String(contentsOf: authPath, encoding: .utf8) {
+                let lineCount = content.components(separatedBy: .newlines).count
+                let byteCount = content.utf8.count
+                debugLines.append("[auth.json] EXISTS at \(authPath.path)")
+                debugLines.append("  - Lines: \(lineCount), Bytes: \(byteCount)")
+            } else {
+                debugLines.append("[auth.json] EXISTS but UNREADABLE at \(authPath.path)")
+            }
+        } else {
+            debugLines.append("[auth.json] NOT FOUND at \(authPath.path)")
+        }
+
+        // 2. ~/.local/share/opencode directory contents
+        let opencodeDir = homeDir
+            .appendingPathComponent(".local")
+            .appendingPathComponent("share")
+            .appendingPathComponent("opencode")
+
+        if fileManager.fileExists(atPath: opencodeDir.path) {
+            if let contents = try? fileManager.contentsOfDirectory(atPath: opencodeDir.path) {
+                let fileCount = contents.filter { !$0.hasPrefix(".") }.count
+                debugLines.append("[~/.local/share/opencode] EXISTS")
+                debugLines.append("  - Items: \(fileCount)")
+                for item in contents.sorted() {
+                    var isDir: ObjCBool = false
+                    let itemPath = opencodeDir.appendingPathComponent(item).path
+                    fileManager.fileExists(atPath: itemPath, isDirectory: &isDir)
+                    let typeIndicator = isDir.boolValue ? "[DIR]" : "[FILE]"
+                    debugLines.append("    \(typeIndicator) \(item)")
+                }
+            }
+        } else {
+            debugLines.append("[~/.local/share/opencode] NOT FOUND")
+        }
+
+        // 3. ~/.config/opencode directory (antigravity-accounts.json)
+        let configDir = homeDir
+            .appendingPathComponent(".config")
+            .appendingPathComponent("opencode")
+
+        if fileManager.fileExists(atPath: configDir.path) {
+            if let contents = try? fileManager.contentsOfDirectory(atPath: configDir.path) {
+                let fileCount = contents.filter { !$0.hasPrefix(".") }.count
+                debugLines.append("[~/.config/opencode] EXISTS")
+                debugLines.append("  - Items: \(fileCount)")
+                for item in contents.sorted() {
+                    var isDir: ObjCBool = false
+                    let itemPath = configDir.appendingPathComponent(item).path
+                    fileManager.fileExists(atPath: itemPath, isDirectory: &isDir)
+                    let typeIndicator = isDir.boolValue ? "[DIR]" : "[FILE]"
+                    debugLines.append("    \(typeIndicator) \(item)")
+                }
+            }
+        } else {
+            debugLines.append("[~/.config/opencode] NOT FOUND")
+        }
+
+        // 4. OpenCode CLI existence
+        let opencodeCLI = homeDir.appendingPathComponent(".opencode/bin/opencode")
+        if fileManager.fileExists(atPath: opencodeCLI.path) {
+            debugLines.append("[OpenCode CLI] EXISTS at \(opencodeCLI.path)")
+        } else {
+            debugLines.append("[OpenCode CLI] NOT FOUND at \(opencodeCLI.path)")
+        }
+
+        // 5. Token existence and lengths (masked for security)
+        debugLines.append("---------- Token Status ----------")
+
+        if let auth = readOpenCodeAuth() {
+            // Anthropic (Claude)
+            if let anthropic = auth.anthropic {
+                debugLines.append("[Anthropic] OAuth Present")
+                debugLines.append("  - Access Token: \(anthropic.access.count) chars")
+                debugLines.append("  - Refresh Token: \(anthropic.refresh.count) chars")
+                debugLines.append("  - Account ID: \(anthropic.accountId ?? "nil")")
+                let expiresDate = Date(timeIntervalSince1970: TimeInterval(anthropic.expires))
+                let isExpired = expiresDate < Date()
+                debugLines.append("  - Expires: \(expiresDate) (\(isExpired ? "EXPIRED" : "valid"))")
+            } else {
+                debugLines.append("[Anthropic] NOT CONFIGURED")
+            }
+
+            // OpenAI
+            if let openai = auth.openai {
+                debugLines.append("[OpenAI] OAuth Present")
+                debugLines.append("  - Access Token: \(openai.access.count) chars")
+                debugLines.append("  - Refresh Token: \(openai.refresh.count) chars")
+                let expiresDate = Date(timeIntervalSince1970: TimeInterval(openai.expires))
+                let isExpired = expiresDate < Date()
+                debugLines.append("  - Expires: \(expiresDate) (\(isExpired ? "EXPIRED" : "valid"))")
+            } else {
+                debugLines.append("[OpenAI] NOT CONFIGURED")
+            }
+
+            // GitHub Copilot
+            if let copilot = auth.githubCopilot {
+                debugLines.append("[GitHub Copilot] OAuth Present")
+                debugLines.append("  - Access Token: \(copilot.access.count) chars")
+                debugLines.append("  - Refresh Token: \(copilot.refresh.count) chars")
+                let expiresDate = Date(timeIntervalSince1970: TimeInterval(copilot.expires))
+                let isExpired = expiresDate < Date()
+                debugLines.append("  - Expires: \(expiresDate) (\(isExpired ? "EXPIRED" : "valid"))")
+            } else {
+                debugLines.append("[GitHub Copilot] NOT CONFIGURED")
+            }
+
+            // OpenRouter
+            if let openrouter = auth.openrouter {
+                debugLines.append("[OpenRouter] API Key Present")
+                debugLines.append("  - Key Length: \(openrouter.key.count) chars")
+                debugLines.append("  - Key Preview: \(maskToken(openrouter.key))")
+            } else {
+                debugLines.append("[OpenRouter] NOT CONFIGURED")
+            }
+
+            // OpenCode
+            if let opencode = auth.opencode {
+                debugLines.append("[OpenCode] API Key Present")
+                debugLines.append("  - Key Length: \(opencode.key.count) chars")
+                debugLines.append("  - Key Preview: \(maskToken(opencode.key))")
+            } else {
+                debugLines.append("[OpenCode] NOT CONFIGURED")
+            }
+
+            // Kimi for Coding
+            if let kimi = auth.kimiForCoding {
+                debugLines.append("[Kimi for Coding] API Key Present")
+                debugLines.append("  - Key Length: \(kimi.key.count) chars")
+                debugLines.append("  - Key Preview: \(maskToken(kimi.key))")
+            } else {
+                debugLines.append("[Kimi for Coding] NOT CONFIGURED")
+            }
+        } else {
+            debugLines.append("[auth.json] PARSE FAILED or NOT FOUND")
+        }
+
+        // 6. Antigravity accounts
+        if let accounts = readAntigravityAccounts() {
+            debugLines.append("[Antigravity Accounts] \(accounts.accounts.count) account(s)")
+            debugLines.append("  - Active Index: \(accounts.activeIndex)")
+            for (index, account) in accounts.accounts.enumerated() {
+                let activeMarker = index == accounts.activeIndex ? " (ACTIVE)" : ""
+                debugLines.append("  - [\(index)] \(account.email)\(activeMarker)")
+                debugLines.append("    - Refresh Token: \(account.refreshToken.count) chars")
+                debugLines.append("    - Project ID: \(account.projectId)")
+            }
+        } else {
+            debugLines.append("[Antigravity Accounts] NOT FOUND or PARSE FAILED")
+        }
+
+        debugLines.append("================================================")
+
+        // Log all debug info
+        let fullDebugLog = debugLines.joined(separator: "\n")
+        logger.info("\n\(fullDebugLog)")
+
+        // Also write to debug file for easier access
+        #if DEBUG
+        writeToDebugFile(fullDebugLog)
+        #endif
+    }
+
+    /// Masks a token for secure logging (shows first 4 and last 4 chars)
+    private func maskToken(_ token: String) -> String {
+        guard token.count > 8 else { return "***" }
+        let prefix = String(token.prefix(4))
+        let suffix = String(token.suffix(4))
+        return "\(prefix)...\(suffix)"
+    }
+
+    /// Writes debug info to file for easier access
+    private func writeToDebugFile(_ content: String) {
+        let path = "/tmp/provider_debug.log"
+        let timestampedContent = "[\(Date())] TokenManager Environment Info:\n\(content)\n\n"
+        if let data = timestampedContent.data(using: .utf8) {
+            if FileManager.default.fileExists(atPath: path) {
+                if let handle = FileHandle(forWritingAtPath: path) {
+                    handle.seekToEndOfFile()
+                    handle.write(data)
+                    handle.closeFile()
+                }
+            } else {
+                try? data.write(to: URL(fileURLWithPath: path))
+            }
+        }
+    }
 }

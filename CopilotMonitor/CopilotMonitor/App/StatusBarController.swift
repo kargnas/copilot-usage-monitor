@@ -85,6 +85,10 @@ final class StatusBarController: NSObject {
     override init() {
         super.init()
         debugLog("StatusBarController init started")
+
+        TokenManager.shared.logDebugEnvironmentInfo()
+        debugLog("Environment debug info logged")
+
         setupStatusItem()
         debugLog("setupStatusItem completed")
         setupMenu()
