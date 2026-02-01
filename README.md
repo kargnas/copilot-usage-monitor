@@ -1,8 +1,8 @@
-# OpenCode Usage Monitor
+# OpenCode Bar
 
 <p align="center">
-  <img src="docs/screenshot2.png" alt="OpenCode Usage Monitor Screenshot" width="40%">
-  <img src="docs/screenshot3.png" alt="OpenCode Usage Monitor Screenshot" width="40%">
+  <img src="docs/screenshot2.png" alt="OpenCode Bar Screenshot" width="40%">
+  <img src="docs/screenshot3.png" alt="OpenCode Bar Screenshot" width="40%">
 </p>
 
 <p align="center">
@@ -24,7 +24,7 @@
 
 ## Overview
 
-**OpenCode Usage Monitor** automatically detects and monitors all AI providers registered in your [OpenCode](https://opencode.ai) configuration. No manual setup required - just install and see your usage across all providers in one unified dashboard.
+**OpenCode Bar** automatically detects and monitors all AI providers registered in your [OpenCode](https://opencode.ai) configuration. No manual setup required - just install and see your usage across all providers in one unified dashboard.
 
 ### Supported Providers (Auto-detected from OpenCode)
 
@@ -95,7 +95,7 @@ open ~/Library/Developer/Xcode/DerivedData/CopilotMonitor-*/Build/Products/Debug
 ## Usage
 
 1. **Install OpenCode**: Make sure you have OpenCode installed and authenticated with your providers
-2. **Launch the app**: Run OpenCode Usage Monitor
+2. **Launch the app**: Run OpenCode Bar
 3. **View usage**: Click the menu bar icon to see all your provider usage
 4. **GitHub Copilot** (optional): Click "Sign In" to add Copilot monitoring via GitHub OAuth
 
