@@ -462,14 +462,20 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
-		CLIAAAAAAAAAAAAAAAAAAAAA /* Sources */ = {
-			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-				CLI1111111111111111111111 /* main.swift in Sources */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
+	CLIAAAAAAAAAAAAAAAAAAAAA /* Sources */ = {
+		isa = PBXSourcesBuildPhase;
+		buildActionMask = 2147483647;
+		files = (
+			CLI1111111111111111111111 /* main.swift in Sources */,
+			CB3FA9AE43F3466269FA56F4 /* ProviderProtocol.swift in Sources */,
+			B248782F500D3B09E0CE5AC8 /* ProviderUsage.swift in Sources */,
+			PR1111111111111111111111 /* ProviderResult.swift in Sources */,
+			E33333333333333333333334 /* UsageHistory.swift in Sources */,
+			0EA5E7A5BCD47582D6C2175B /* TokenManager.swift in Sources */,
+			68CE796F262067298FE88469 /* BrowserCookieService.swift in Sources */,
+		);
+		runOnlyForDeploymentPostprocessing = 0;
+	};
 		B22222222222222222222222 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
