@@ -58,6 +58,15 @@
 		T55555555555555555555555 /* codex_response.json in Resources */ = {isa = PBXBuildFile; fileRef = T66666666666666666666666 /* codex_response.json */; };
 		T77777777777777777777777 /* copilot_response.json in Resources */ = {isa = PBXBuildFile; fileRef = T88888888888888888888888 /* copilot_response.json */; };
 		T99999999999999999999999 /* gemini_response.json in Resources */ = {isa = PBXBuildFile; fileRef = TAAAAAAAAAAAAAAAAAAAAAAA /* gemini_response.json */; };
+		CLICLAUDE11111111111111 /* ClaudeProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4DDC1B4DE6B5118CE4AE8F82 /* ClaudeProvider.swift */; };
+		CLICODEX111111111111111 /* CodexProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 76783C44AA2329AE3FA7E981 /* CodexProvider.swift */; };
+		CLIOPENROUTER111111111 /* OpenRouterProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = OR2222222222222222222222 /* OpenRouterProvider.swift */; };
+		CLIANTIGRAVITY11111111 /* AntigravityProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1DA8E47F4CFEFC3571708AD /* AntigravityProvider.swift */; };
+		CLIOPENCZEN1111111111111 /* OpenCodeZenProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = OZ2222222222222222222222 /* OpenCodeZenProvider.swift */; };
+		CLIKIMI1111111111111111 /* KimiProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = KI2222222222222222222222 /* KimiProvider.swift */; };
+		CLIPROVMGR11111111111111 /* CLIProviderManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = CLIPROVMGR22222222222222 /* CLIProviderManager.swift */; };
+		CLICOPILOT11111111111111 /* CopilotCLIProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = CLICOPILOT22222222222222 /* CopilotCLIProvider.swift */; };
+		CLIHISTORY11111111111111 /* CopilotHistoryService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B1085A77EF4A58E5B5EC71B /* CopilotHistoryService.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -73,6 +82,8 @@
 /* Begin PBXFileReference section */
 		CLI2222222222222222222222 /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
 		CLI5555555555555555555555 /* opencodebar-cli */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = "opencodebar-cli"; sourceTree = BUILT_PRODUCTS_DIR; };
+		CLIPROVMGR22222222222222 /* CLIProviderManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CLIProviderManager.swift; sourceTree = "<group>"; };
+		CLICOPILOT22222222222222 /* CopilotCLIProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CopilotCLIProvider.swift; sourceTree = "<group>"; };
 		06EC3B683EB6892E4F9C8316 /* GeminiCLIProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GeminiCLIProvider.swift; sourceTree = "<group>"; };
 		0F6CE62C58ECA852F25FEF30 /* MenuResultBuilder.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MenuResultBuilder.swift; sourceTree = "<group>"; };
 		18F40F1AC76A49A9B9DF74B0 /* ProviderManager.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ProviderManager.swift; sourceTree = "<group>"; };
@@ -158,8 +169,18 @@
 			isa = PBXGroup;
 			children = (
 				CLI2222222222222222222222 /* main.swift */,
+				CLIPROVMGR22222222222222 /* CLIProviderManager.swift */,
+				CLIPROVIDERS333333333333 /* Providers */,
 			);
 			path = CLI;
+			sourceTree = "<group>";
+		};
+		CLIPROVIDERS333333333333 /* Providers */ = {
+			isa = PBXGroup;
+			children = (
+				CLICOPILOT22222222222222 /* CopilotCLIProvider.swift */,
+			);
+			path = Providers;
 			sourceTree = "<group>";
 		};
 		1D81BD5EF6E11EA1F43B6746 /* CopilotMonitor */ = {
@@ -473,6 +494,16 @@
 			E33333333333333333333334 /* UsageHistory.swift in Sources */,
 			0EA5E7A5BCD47582D6C2175B /* TokenManager.swift in Sources */,
 			68CE796F262067298FE88469 /* BrowserCookieService.swift in Sources */,
+			CLICLAUDE11111111111111 /* ClaudeProvider.swift in Sources */,
+			CLICODEX111111111111111 /* CodexProvider.swift in Sources */,
+			F35960B456C28D71BE7575A5 /* GeminiCLIProvider.swift in Sources */,
+			CLIOPENROUTER111111111 /* OpenRouterProvider.swift in Sources */,
+			CLIANTIGRAVITY11111111 /* AntigravityProvider.swift in Sources */,
+			CLIOPENCZEN1111111111111 /* OpenCodeZenProvider.swift in Sources */,
+			CLIKIMI1111111111111111 /* KimiProvider.swift in Sources */,
+			CLIPROVMGR11111111111111 /* CLIProviderManager.swift in Sources */,
+			CLICOPILOT11111111111111 /* CopilotCLIProvider.swift in Sources */,
+			CLIHISTORY11111111111111 /* CopilotHistoryService.swift in Sources */,
 		);
 		runOnlyForDeploymentPostprocessing = 0;
 	};
