@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		CLI1111111111111111111111 /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = CLI2222222222222222222222 /* main.swift */; };
+		CLI3333333333333333333333 /* ArgumentParser in Frameworks */ = {isa = PBXBuildFile; productRef = CLI4444444444444444444444 /* ArgumentParser */; };
 		0B6CF8BEB936A2055F19AA8C /* CodexProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 76783C44AA2329AE3FA7E981 /* CodexProvider.swift */; };
 		0EA5E7A5BCD47582D6C2175B /* TokenManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = DBF0C48368166F3AD0C79F92 /* TokenManager.swift */; };
 		23AA5FD37F2062EACCA79F50 /* GeminiCLIProviderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B63B85E0F2A8C591D7E26AE2 /* GeminiCLIProviderTests.swift */; };
@@ -69,6 +71,8 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		CLI2222222222222222222222 /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
+		CLI5555555555555555555555 /* opencodebar-cli */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = "opencodebar-cli"; sourceTree = BUILT_PRODUCTS_DIR; };
 		06EC3B683EB6892E4F9C8316 /* GeminiCLIProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GeminiCLIProvider.swift; sourceTree = "<group>"; };
 		0F6CE62C58ECA852F25FEF30 /* MenuResultBuilder.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MenuResultBuilder.swift; sourceTree = "<group>"; };
 		18F40F1AC76A49A9B9DF74B0 /* ProviderManager.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ProviderManager.swift; sourceTree = "<group>"; };
@@ -132,6 +136,14 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		CLI6666666666666666666666 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				CLI3333333333333333333333 /* ArgumentParser in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		TEEEEEEEEEEEEEEEEEEEEEE /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -142,6 +154,14 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		CLI7777777777777777777777 /* CLI */ = {
+			isa = PBXGroup;
+			children = (
+				CLI2222222222222222222222 /* main.swift */,
+			);
+			path = CLI;
+			sourceTree = "<group>";
+		};
 		1D81BD5EF6E11EA1F43B6746 /* CopilotMonitor */ = {
 			isa = PBXGroup;
 			children = (
@@ -180,6 +200,7 @@
 			isa = PBXGroup;
 			children = (
 				ACCCCCCCCCCCCCCCCCCCCCCC /* CopilotMonitor */,
+				CLI7777777777777777777777 /* CLI */,
 				TFFFFFFFFFFFFFFFFFFFFFFFF /* CopilotMonitorTests */,
 				ADDDDDDDDDDDDDDDDDDDDDDD /* Products */,
 				SP3333333333333333333333 /* Frameworks */,
@@ -207,6 +228,7 @@
 			isa = PBXGroup;
 			children = (
 				A77777777777777777777777 /* OpenCode Bar.app */,
+				CLI5555555555555555555555 /* opencodebar-cli */,
 				TDDDDDDDDDDDDDDDDDDDDDD /* CopilotMonitorTests.xctest */,
 			);
 			name = Products;
@@ -338,6 +360,25 @@
 			productReference = A77777777777777777777777 /* OpenCode Bar.app */;
 			productType = "com.apple.product-type.application";
 		};
+		CLI8888888888888888888888 /* opencodebar-cli */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = CLI9999999999999999999999 /* Build configuration list for PBXNativeTarget "opencodebar-cli" */;
+			buildPhases = (
+				CLIAAAAAAAAAAAAAAAAAAAAA /* Sources */,
+				CLI6666666666666666666666 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = "opencodebar-cli";
+			packageProductDependencies = (
+				CLI4444444444444444444444 /* ArgumentParser */,
+			);
+			productName = "opencodebar-cli";
+			productReference = CLI5555555555555555555555 /* opencodebar-cli */;
+			productType = "com.apple.product-type.tool";
+		};
 		TGGGGGGGGGGGGGGGGGGGGGGG /* CopilotMonitorTests */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = THHHHHHHHHHHHHHHHHHHHHHH /* Build configuration list for PBXNativeTarget "CopilotMonitorTests" */;
@@ -380,15 +421,17 @@
 				Base,
 			);
 			mainGroup = ABBBBBBBBBBBBBBBBBBBBBBB;
-			packageReferences = (
-				SP4444444444444444444444 /* XCRemoteSwiftPackageReference "Sparkle" */,
-				MBA1111111111111111111111 /* XCRemoteSwiftPackageReference "MenuBarExtraAccess" */,
-			);
+		packageReferences = (
+			SP4444444444444444444444 /* XCRemoteSwiftPackageReference "Sparkle" */,
+			MBA1111111111111111111111 /* XCRemoteSwiftPackageReference "MenuBarExtraAccess" */,
+			CLIBBBBBBBBBBBBBBBBBBBBB /* XCRemoteSwiftPackageReference "swift-argument-parser" */,
+		);
 			productRefGroup = ADDDDDDDDDDDDDDDDDDDDDDD /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
 				AFFFFFFFFFFFFFFFFFFFFF /* CopilotMonitor */,
+				CLI8888888888888888888888 /* opencodebar-cli */,
 				TGGGGGGGGGGGGGGGGGGGGGGG /* CopilotMonitorTests */,
 			);
 		};
@@ -419,6 +462,14 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		CLIAAAAAAAAAAAAAAAAAAAAA /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				CLI1111111111111111111111 /* main.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		B22222222222222222222222 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -687,6 +738,30 @@
 			};
 			name = Release;
 		};
+		CLICCCCCCCCCCCCCCCCCCCCC /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = "";
+				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_PARSE_AS_LIBRARY = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		CLIDDDDDDDDDDDDDDDDDDDDD /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = "";
+				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_PARSE_AS_LIBRARY = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -717,9 +792,26 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
+		CLI9999999999999999999999 /* Build configuration list for PBXNativeTarget "opencodebar-cli" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				CLICCCCCCCCCCCCCCCCCCCCC /* Debug */,
+				CLIDDDDDDDDDDDDDDDDDDDDD /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
+		CLIBBBBBBBBBBBBBBBBBBBBB /* XCRemoteSwiftPackageReference "swift-argument-parser" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/apple/swift-argument-parser";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 1.3.0;
+			};
+		};
 		MBA1111111111111111111111 /* XCRemoteSwiftPackageReference "MenuBarExtraAccess" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/orchetect/MenuBarExtraAccess";
@@ -739,6 +831,11 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		CLI4444444444444444444444 /* ArgumentParser */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = CLIBBBBBBBBBBBBBBBBBBBBB /* XCRemoteSwiftPackageReference "swift-argument-parser" */;
+			productName = ArgumentParser;
+		};
 		MBA2222222222222222222222 /* MenuBarExtraAccess */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = MBA1111111111111111111111 /* XCRemoteSwiftPackageReference "MenuBarExtraAccess" */;
