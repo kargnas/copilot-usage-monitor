@@ -8,7 +8,7 @@
 
 ### Branding Guides
 - Official Brand: `OpenCode Bar`
-  - Don't use mis-capitalized forms like `Opencode Bar`, `OpencodeBar`.
+  - Don't use mis-capitalized or malformed forms like `Opencode Bar` or versions without the space (e.g. `OpenCodeBar`).
 - File Name:
   - `OpenCode Bar` if it allows whitespace.
   - `OpenCode-Bar` if it allows dash.
