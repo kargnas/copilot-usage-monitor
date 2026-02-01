@@ -84,7 +84,7 @@
 		9B1085A77EF4A58E5B5EC71B /* CopilotHistoryService.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = CopilotHistoryService.swift; sourceTree = "<group>"; };
 		A44444444444444444444444 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		A66666666666666666666666 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
-		A77777777777777777777777 /* CopilotMonitor.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = CopilotMonitor.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A77777777777777777777777 /* OpenCode Bar.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "OpenCode Bar.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		A88888888888888888888888 /* CopilotMonitor.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = CopilotMonitor.entitlements; sourceTree = "<group>"; };
 		A99999999999999999999999 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		AD0CA52627AF05BD67B56E /* StatusBarIconView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusBarIconView.swift; sourceTree = "<group>"; };
@@ -204,7 +204,7 @@
 		ADDDDDDDDDDDDDDDDDDDDDDD /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				A77777777777777777777777 /* CopilotMonitor.app */,
+				A77777777777777777777777 /* OpenCode Bar.app */,
 				TDDDDDDDDDDDDDDDDDDDDDD /* CopilotMonitorTests.xctest */,
 			);
 			name = Products;
@@ -332,7 +332,7 @@
 				SP2222222222222222222222 /* Sparkle */,
 			);
 			productName = CopilotMonitor;
-			productReference = A77777777777777777777777 /* CopilotMonitor.app */;
+			productReference = A77777777777777777777777 /* OpenCode Bar.app */;
 			productType = "com.apple.product-type.application";
 		};
 		TGGGGGGGGGGGGGGGGGGGGGGG /* CopilotMonitorTests */ = {
@@ -616,7 +616,7 @@
 				);
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.copilotmonitor.CopilotMonitor;
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				PRODUCT_NAME = "OpenCode Bar";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
 			};
@@ -641,7 +641,7 @@
 				);
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.copilotmonitor.CopilotMonitor;
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				PRODUCT_NAME = "OpenCode Bar";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
 			};
@@ -661,7 +661,7 @@
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_VERSION = 5.0;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/CopilotMonitor.app/Contents/MacOS/CopilotMonitor";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/OpenCode Bar.app/Contents/MacOS/OpenCode Bar";
 			};
 			name = Debug;
 		};
@@ -679,7 +679,7 @@
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_VERSION = 5.0;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/CopilotMonitor.app/Contents/MacOS/CopilotMonitor";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/OpenCode Bar.app/Contents/MacOS/OpenCode Bar";
 			};
 			name = Release;
 		};

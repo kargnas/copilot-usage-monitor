@@ -70,7 +70,7 @@ jobs:
         if: "!startsWith(github.ref, 'refs/tags/v')"
         run: |
           mkdir -p CopilotMonitor/build/export
-          cp -R CopilotMonitor/build/CopilotMonitor.xcarchive/Products/Applications/CopilotMonitor.app CopilotMonitor/build/export/
+          cp -R "CopilotMonitor/build/CopilotMonitor.xcarchive/Products/Applications/OpenCode Bar.app" CopilotMonitor/build/export/
       
       - name: Export App (Signed)
         if: startsWith(github.ref, 'refs/tags/v')
@@ -83,8 +83,8 @@ jobs:
       - name: Verify Code Signing
         if: startsWith(github.ref, 'refs/tags/v')
         run: |
-          codesign --verify --deep --strict --verbose=2 "$RUNNER_TEMP/export/CopilotMonitor.app"
-          codesign -dv --verbose=4 "$RUNNER_TEMP/export/CopilotMonitor.app" 2>&1 | grep "Authority"
+          codesign --verify --deep --strict --verbose=2 "$RUNNER_TEMP/export/OpenCode Bar.app"
+          codesign -dv --verbose=4 "$RUNNER_TEMP/export/OpenCode Bar.app" 2>&1 | grep "Authority"
       
       - name: Notarize App
         if: startsWith(github.ref, 'refs/tags/v')
@@ -94,16 +94,16 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           cd "$RUNNER_TEMP/export"
-          ditto -c -k --keepParent CopilotMonitor.app CopilotMonitor.zip
+          ditto -c -k --keepParent "OpenCode Bar.app" "OpenCode Bar.zip"
           
-          xcrun notarytool submit CopilotMonitor.zip \
+          xcrun notarytool submit "OpenCode Bar.zip" \
             --apple-id "$APPLE_ID" \
             --password "$APPLE_APP_PASSWORD" \
             --team-id "$APPLE_TEAM_ID" \
             --wait \
             --timeout 30m
           
-          xcrun stapler staple CopilotMonitor.app
+          xcrun stapler staple "OpenCode Bar.app"
       
       - name: Install create-dmg
         if: startsWith(github.ref, 'refs/tags/v')
@@ -113,7 +113,7 @@ jobs:
         if: "!startsWith(github.ref, 'refs/tags/v')"
         run: |
           mkdir -p dmg_temp
-          cp -R CopilotMonitor/build/export/CopilotMonitor.app dmg_temp/
+          cp -R "CopilotMonitor/build/export/OpenCode Bar.app" dmg_temp/
           ln -s /Applications dmg_temp/Applications
           
            hdiutil create -volname "OpenCode Bar" \
@@ -133,17 +133,17 @@ jobs:
           # This prevents extra files (Packaging.log, DistributionSummary.plist, etc.) from being included
           DMG_STAGING="$RUNNER_TEMP/dmg_staging"
           mkdir -p "$DMG_STAGING"
-          cp -R "$RUNNER_TEMP/export/CopilotMonitor.app" "$DMG_STAGING/"
+          cp -R "$RUNNER_TEMP/export/OpenCode Bar.app" "$DMG_STAGING/"
           ln -s /Applications "$DMG_STAGING/Applications"
           
            create-dmg \
              --volname "OpenCode Bar" \
              --window-pos 200 120 \
-            --window-size 500 320 \
-            --icon-size 80 \
-            --icon "CopilotMonitor.app" 125 175 \
-            --app-drop-link 375 175 \
-            --hide-extension "CopilotMonitor.app" \
+            --window-size 600 400 \
+            --icon-size 100 \
+            --icon "OpenCode Bar.app" 150 200 \
+            --app-drop-link 450 200 \
+            --hide-extension "OpenCode Bar.app" \
             "$DMG_NAME" \
             "$DMG_STAGING" || true
           

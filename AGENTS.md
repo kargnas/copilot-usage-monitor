@@ -68,7 +68,7 @@ xcodebuild -project CopilotMonitor/CopilotMonitor.xcodeproj \
 open ~/Library/Developer/Xcode/DerivedData/CopilotMonitor-*/Build/Products/Debug/*.app
 
 # Kill + Build + Run (one-liner)
-pkill -x CopilotMonitor 2>/dev/null; \
+pkill -x "OpenCode Bar" 2>/dev/null; \
 xcodebuild -project CopilotMonitor/CopilotMonitor.xcodeproj \
   -scheme CopilotMonitor -configuration Debug build && \
 open ~/Library/Developer/Xcode/DerivedData/CopilotMonitor-*/Build/Products/Debug/*.app

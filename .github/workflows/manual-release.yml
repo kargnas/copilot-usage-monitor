@@ -123,16 +123,16 @@ jobs:
       - name: Verify Code Signing
         run: |
           echo "Verifying code signature..."
-          codesign --verify --deep --strict --verbose=2 "$RUNNER_TEMP/export/CopilotMonitor.app"
+          codesign --verify --deep --strict --verbose=2 "$RUNNER_TEMP/export/OpenCode Bar.app"
           
           echo ""
           echo "Certificate chain:"
-          codesign -dv --verbose=4 "$RUNNER_TEMP/export/CopilotMonitor.app" 2>&1 | grep "Authority"
+          codesign -dv --verbose=4 "$RUNNER_TEMP/export/OpenCode Bar.app" 2>&1 | grep "Authority"
       
       - name: Create ZIP for Notarization
         run: |
           cd "$RUNNER_TEMP/export"
-          ditto -c -k --keepParent CopilotMonitor.app CopilotMonitor.zip
+          ditto -c -k --keepParent "OpenCode Bar.app" "OpenCode Bar.zip"
           echo "Created ZIP for notarization"
       
       - name: Notarize App
@@ -142,7 +142,7 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           echo "Submitting app for notarization..."
-          xcrun notarytool submit "$RUNNER_TEMP/export/CopilotMonitor.zip" \
+          xcrun notarytool submit "$RUNNER_TEMP/export/OpenCode Bar.zip" \
             --apple-id "$APPLE_ID" \
             --password "$APPLE_APP_PASSWORD" \
             --team-id "$APPLE_TEAM_ID" \
@@ -153,8 +153,8 @@ jobs:
       
       - name: Staple Notarization Ticket
         run: |
-          xcrun stapler staple "$RUNNER_TEMP/export/CopilotMonitor.app"
-          xcrun stapler validate "$RUNNER_TEMP/export/CopilotMonitor.app"
+          xcrun stapler staple "$RUNNER_TEMP/export/OpenCode Bar.app"
+          xcrun stapler validate "$RUNNER_TEMP/export/OpenCode Bar.app"
           echo "Notarization ticket stapled successfully"
       
       - name: Install create-dmg
@@ -171,17 +171,17 @@ jobs:
           # This prevents extra files (Packaging.log, DistributionSummary.plist, etc.) from being included
           DMG_STAGING="$RUNNER_TEMP/dmg_staging"
           mkdir -p "$DMG_STAGING"
-          cp -R "$RUNNER_TEMP/export/CopilotMonitor.app" "$DMG_STAGING/"
+          cp -R "$RUNNER_TEMP/export/OpenCode Bar.app" "$DMG_STAGING/"
           ln -s /Applications "$DMG_STAGING/Applications"
           
            create-dmg \
              --volname "OpenCode Bar" \
              --window-pos 200 120 \
-            --window-size 500 320 \
-            --icon-size 80 \
-            --icon "CopilotMonitor.app" 125 175 \
-            --app-drop-link 375 175 \
-            --hide-extension "CopilotMonitor.app" \
+            --window-size 600 400 \
+            --icon-size 100 \
+            --icon "OpenCode Bar.app" 150 200 \
+            --app-drop-link 450 200 \
+            --hide-extension "OpenCode Bar.app" \
             "$DMG_NAME" \
             "$DMG_STAGING" || true
           

@@ -70,7 +70,7 @@ Download the latest `.dmg` file from the [**Releases**](https://github.com/kargn
 
 > **Note**: If you see a "App is damaged" error, run this command in Terminal:
 > ```bash
-> xattr -cr "/Applications/CopilotMonitor.app"
+> xattr -cr "/Applications/OpenCode Bar.app"
 > ```
 
 ### Build from Source

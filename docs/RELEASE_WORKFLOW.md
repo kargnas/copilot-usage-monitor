@@ -1,6 +1,6 @@
 # Release Workflow Guide
 
-This document describes the process for building, signing, notarizing, and releasing **Copilot Monitor** for macOS.
+This document describes the process for building, signing, notarizing, and releasing **OpenCode Bar** for macOS.
 
 ## Prerequisites
 
@@ -45,7 +45,7 @@ Sign the app bundle with your **Developer ID Application** certificate.
 
 ```bash
 # Define paths
-APP_PATH="$HOME/Library/Developer/Xcode/DerivedData/CopilotMonitor-*/Build/Products/Release/CopilotMonitor.app"
+APP_PATH="$HOME/Library/Developer/Xcode/DerivedData/CopilotMonitor-*/Build/Products/Release/OpenCode Bar.app"
 CERT_ID="Developer ID Application: SANG RAK CHOI (<TEAM_ID>)"
 
 # Sign the app
@@ -59,13 +59,13 @@ Create a DMG disk image for distribution.
 ```bash
 mkdir -p dist
 cp -r "$APP_PATH" dist/
-hdiutil create -volname "CopilotMonitor" -srcfolder dist -ov -format UDZO CopilotMonitor.dmg
+hdiutil create -volname "OpenCode Bar" -srcfolder dist -ov -format UDZO OpenCodeUsageMonitor.dmg
 ```
 
 Sign the DMG file itself:
 
 ```bash
-codesign --force --sign "$CERT_ID" CopilotMonitor.dmg
+codesign --force --sign "$CERT_ID" OpenCodeUsageMonitor.dmg
 ```
 
 ## 5. Notarization (Crucial for Gatekeeper)
@@ -76,7 +76,7 @@ Submit the DMG to Apple's notarization service.
 
 ```bash
 # Submit for notarization
-xcrun notarytool submit CopilotMonitor.dmg \
+xcrun notarytool submit OpenCodeUsageMonitor.dmg \
   --apple-id "<YOUR_APPLE_ID>" \
   --password "<APP_SPECIFIC_PASSWORD>" \
   --team-id "<TEAM_ID>" \
@@ -86,7 +86,7 @@ xcrun notarytool submit CopilotMonitor.dmg \
 If successful (`Accepted`), staple the ticket to the DMG:
 
 ```bash
-xcrun stapler staple CopilotMonitor.dmg
+xcrun stapler staple OpenCodeUsageMonitor.dmg
 ```
 
 ## 6. GitHub Release
@@ -98,7 +98,7 @@ Create a release and upload the notarized DMG.
 gh release create v<NEW_VERSION> --title "v<NEW_VERSION>: Release Title" --notes "Release notes here..."
 
 # Upload the signed & notarized DMG
-gh release upload v<NEW_VERSION> CopilotMonitor.dmg --clobber
+gh release upload v<NEW_VERSION> OpenCodeUsageMonitor.dmg --clobber
 ```
 
 ## Troubleshooting
@@ -106,7 +106,7 @@ gh release upload v<NEW_VERSION> CopilotMonitor.dmg --clobber
 ### "App is damaged" Error
 If notarization was skipped or failed, users can bypass Gatekeeper:
 ```bash
-xattr -cr /Applications/CopilotMonitor.app
+xattr -cr "/Applications/OpenCode Bar.app"
 ```
 
 ### Keychain Access
