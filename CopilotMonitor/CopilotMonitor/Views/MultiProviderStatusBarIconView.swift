@@ -1,5 +1,6 @@
 import AppKit
 
+// MARK: - Provider Alert
 /// Alert data for a provider with low quota
 struct ProviderAlert {
     let identifier: ProviderIdentifier
@@ -21,7 +22,7 @@ final class MultiProviderStatusBarIconView: NSView {
     /// Cost text: variable width
     /// Per alert: icon (14px) + space (2px) + percent text + padding (4px)
     override var intrinsicContentSize: NSSize {
-        let baseIconWidth: CGFloat = 22 // $ icon + padding
+        let baseIconWidth = MenuDesignToken.Dimension.itemHeight // $ icon + padding
 
         if isLoading || hasError {
             let text = isLoading ? "..." : "Err"

@@ -20,7 +20,7 @@ final class StatusBarIconView: NSView {
     /// - With add-on cost: icon + cost text width
     /// - Without add-on cost: icon + circle (8px) + padding (4px) + number text width
     override var intrinsicContentSize: NSSize {
-        let baseIconWidth: CGFloat = 22 // icon (16) + right padding (6)
+        let baseIconWidth = MenuDesignToken.Dimension.itemHeight // icon (16) + right padding (6)
 
         if addOnCost > 0 {
             // Calculate cost text width dynamically
