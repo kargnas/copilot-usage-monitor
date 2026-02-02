@@ -289,24 +289,29 @@ Contributions are welcome! Please submit a Pull Request.
 
 1. Fork the Project
 2. Create your Feature Branch (`git checkout -b feature/AmazingFeature`)
-3. **Setup Git Hooks** (automated linting before commits):
+3. **Setup Git Hooks** (run once after clone):
    ```bash
-   ./scripts/setup-git-hooks.sh
+   make setup
    ```
+   This configures pre-commit hooks for:
+   - **SwiftLint**: Checks Swift code style on staged `.swift` files
+   - **action-validator**: Validates GitHub Actions workflow files
 4. Make your Changes
 5. Commit your Changes (`git commit -m 'Add some AmazingFeature'`)
-   - SwiftLint will automatically check your code before commit
+   - Pre-commit hooks will automatically check your code
    - Fix any violations or use `git commit --no-verify` to bypass (not recommended)
 6. Push to the Branch (`git push origin feature/AmazingFeature`)
 7. Open a Pull Request
 
 ### Code Quality
 
-This project uses SwiftLint to maintain code quality. All Swift files are automatically checked:
+This project uses SwiftLint and action-validator to maintain code quality:
 
-- **Pre-commit Hook**: Runs on `git commit` (install via `./scripts/setup-git-hooks.sh`)
+- **Pre-commit Hook**: Runs on `git commit` (setup via `make setup`)
+  - SwiftLint for `.swift` files
+  - action-validator for `.github/workflows/*.yml` files
 - **GitHub Actions**: Runs on all pushes and pull requests
-- **Manual Check**: Run `swiftlint lint CopilotMonitor/CopilotMonitor` anytime
+- **Manual Check**: `make lint` (or `make lint-swift`, `make lint-actions`)
 
 ## License
 

@@ -68,6 +68,15 @@ let rightX = MenuDesignToken.rightElementX  // 270 (computed)
 - **ALWAYS** reuse `createDisabledLabelView()` when possible instead of creating custom NSView
 - When adding new constants, add them to `MenuDesignToken.swift` first, then update this section
 
+### Pre-Development Setup (MUST run before any work)
+Before starting any development work, run:
+```bash
+make setup
+```
+This sets up git hooks for automated pre-commit checks:
+- **SwiftLint**: Validates Swift code style
+- **action-validator**: Validates GitHub Actions workflow YAML files
+
 ### Build & Run Commands
 Use the VSCode task "🐛 Debug: Kill + Build + Run" for development.
 - Automatically detects DerivedData path via `xcodebuild -showBuildSettings`
