@@ -930,7 +930,7 @@ final class StatusBarController: NSObject {
 
     @objc private func openGitHub() {
         logger.info("Opening GitHub repository")
-        if let url = URL(string: "https://github.com/kargnas/opencode-bar") {
+        if let url = URL(string: "https://github.com/opgginc/opencode-bar") {
             NSWorkspace.shared.open(url)
         }
     }
@@ -1043,7 +1043,7 @@ final class StatusBarController: NSObject {
         let encodedTitle = title.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
         let encodedBody = body.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
         
-        if let url = URL(string: "https://github.com/kargnas/opencode-bar/issues/new?title=\(encodedTitle)&body=\(encodedBody)") {
+        if let url = URL(string: "https://github.com/opgginc/opencode-bar/issues/new?title=\(encodedTitle)&body=\(encodedBody)") {
             NSWorkspace.shared.open(url)
         }
     }
@@ -1071,7 +1071,7 @@ final class StatusBarController: NSObject {
 
         if response == .alertFirstButtonReturn {
             debugLog("GitHub star prompt: opening GitHub page")
-            if let url = URL(string: "https://github.com/kargnas/opencode-bar") {
+            if let url = URL(string: "https://github.com/opgginc/opencode-bar") {
                 NSWorkspace.shared.open(url)
             }
         } else {
