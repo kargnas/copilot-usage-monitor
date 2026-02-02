@@ -150,6 +150,8 @@ final class MultiProviderStatusBarIconView: NSView {
             iconName = "OpencodeIcon"
         case .kimi:
             iconName = "k.circle"
+        case .zai:
+            iconName = "ZaiIcon"
         }
 
         let icon: NSImage

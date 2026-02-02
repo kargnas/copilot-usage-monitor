@@ -302,6 +302,106 @@ extension StatusBarController {
                 submenu.addItem(item)
             }
 
+        case .zai:
+            let numberFormatter = NumberFormatter()
+            numberFormatter.numberStyle = .decimal
+            numberFormatter.maximumFractionDigits = 0
+
+            if let tokenUsage = details.tokenUsagePercent {
+                let item = NSMenuItem()
+                item.view = createDisabledLabelView(text: String(format: "Tokens (5h): %.0f%% used", tokenUsage))
+                submenu.addItem(item)
+
+                if let reset = details.tokenUsageReset {
+                    let formatter = DateFormatter()
+                    formatter.dateFormat = "yyyy-MM-dd HH:mm zzz"
+                    formatter.timeZone = TimeZone.current
+                    let resetItem = NSMenuItem()
+                    resetItem.view = createDisabledLabelView(text: "Resets: \(formatter.string(from: reset))", indent: 18)
+                    submenu.addItem(resetItem)
+                }
+            }
+
+            if let tokenUsed = details.tokenUsageUsed, let tokenTotal = details.tokenUsageTotal {
+                let usedText = numberFormatter.string(from: NSNumber(value: tokenUsed)) ?? "\(tokenUsed)"
+                let totalText = numberFormatter.string(from: NSNumber(value: tokenTotal)) ?? "\(tokenTotal)"
+                let item = NSMenuItem()
+                item.view = createDisabledLabelView(text: "Tokens Used: \(usedText) / \(totalText)")
+                submenu.addItem(item)
+            }
+
+            if let mcpUsage = details.mcpUsagePercent {
+                let item = NSMenuItem()
+                item.view = createDisabledLabelView(text: String(format: "MCP (Month): %.0f%% used", mcpUsage))
+                submenu.addItem(item)
+
+                if let reset = details.mcpUsageReset {
+                    let formatter = DateFormatter()
+                    formatter.dateFormat = "yyyy-MM-dd HH:mm zzz"
+                    formatter.timeZone = TimeZone.current
+                    let resetItem = NSMenuItem()
+                    resetItem.view = createDisabledLabelView(text: "Resets: \(formatter.string(from: reset))", indent: 18)
+                    submenu.addItem(resetItem)
+                }
+            }
+
+            if let mcpUsed = details.mcpUsageUsed, let mcpTotal = details.mcpUsageTotal {
+                let usedText = numberFormatter.string(from: NSNumber(value: mcpUsed)) ?? "\(mcpUsed)"
+                let totalText = numberFormatter.string(from: NSNumber(value: mcpTotal)) ?? "\(mcpTotal)"
+                let item = NSMenuItem()
+                item.view = createDisabledLabelView(text: "MCP Used: \(usedText) / \(totalText)")
+                submenu.addItem(item)
+            }
+
+            if details.modelUsageTokens != nil || details.modelUsageCalls != nil {
+                submenu.addItem(NSMenuItem.separator())
+                let headerItem = NSMenuItem()
+                headerItem.view = createHeaderView(title: "Last 24h")
+                submenu.addItem(headerItem)
+            }
+
+            if let tokens = details.modelUsageTokens {
+                let tokensText = numberFormatter.string(from: NSNumber(value: tokens)) ?? "\(tokens)"
+                let item = NSMenuItem()
+                item.view = createDisabledLabelView(text: "Tokens Used: \(tokensText)")
+                submenu.addItem(item)
+            }
+
+            if let calls = details.modelUsageCalls {
+                let callsText = numberFormatter.string(from: NSNumber(value: calls)) ?? "\(calls)"
+                let item = NSMenuItem()
+                item.view = createDisabledLabelView(text: "Model Calls: \(callsText)")
+                submenu.addItem(item)
+            }
+
+            if details.toolNetworkSearchCount != nil || details.toolWebReadCount != nil || details.toolZreadCount != nil {
+                submenu.addItem(NSMenuItem.separator())
+                let headerItem = NSMenuItem()
+                headerItem.view = createHeaderView(title: "Tool Usage (24h)")
+                submenu.addItem(headerItem)
+            }
+
+            if let networkSearch = details.toolNetworkSearchCount {
+                let countText = numberFormatter.string(from: NSNumber(value: networkSearch)) ?? "\(networkSearch)"
+                let item = NSMenuItem()
+                item.view = createDisabledLabelView(text: "Network Search: \(countText)")
+                submenu.addItem(item)
+            }
+
+            if let webRead = details.toolWebReadCount {
+                let countText = numberFormatter.string(from: NSNumber(value: webRead)) ?? "\(webRead)"
+                let item = NSMenuItem()
+                item.view = createDisabledLabelView(text: "Web Read: \(countText)")
+                submenu.addItem(item)
+            }
+
+            if let zread = details.toolZreadCount {
+                let countText = numberFormatter.string(from: NSNumber(value: zread)) ?? "\(zread)"
+                let item = NSMenuItem()
+                item.view = createDisabledLabelView(text: "ZRead: \(countText)")
+                submenu.addItem(item)
+            }
+
         default:
             break
         }

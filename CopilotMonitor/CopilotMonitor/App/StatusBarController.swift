@@ -937,7 +937,7 @@ final class StatusBarController: NSObject {
               insertIndex += 1
           }
 
-           let quotaOrder: [ProviderIdentifier] = [.claude, .kimi, .codex, .antigravity]
+            let quotaOrder: [ProviderIdentifier] = [.claude, .kimi, .codex, .zai, .antigravity]
             for identifier in quotaOrder {
                 guard isProviderEnabled(identifier) else { continue }
 
@@ -1142,11 +1142,13 @@ final class StatusBarController: NSObject {
              image = NSImage(systemSymbolName: "arrow.triangle.branch", accessibilityDescription: identifier.displayName)
          case .antigravity:
              image = NSImage(systemSymbolName: identifier.iconName, accessibilityDescription: identifier.displayName)
-         case .openCodeZen:
-             image = NSImage(named: "OpencodeIcon")
-         case .kimi:
-             image = NSImage(systemSymbolName: identifier.iconName, accessibilityDescription: identifier.displayName)
-         }
+        case .openCodeZen:
+            image = NSImage(named: "OpencodeIcon")
+        case .kimi:
+            image = NSImage(systemSymbolName: identifier.iconName, accessibilityDescription: identifier.displayName)
+        case .zai:
+            image = NSImage(named: "ZaiIcon")
+        }
 
          // Resize icons to 16x16 for consistent menu appearance
          if let image = image {
@@ -1289,7 +1291,9 @@ final class StatusBarController: NSObject {
       }
 
     private func updateUIForLoggedOut() {
-        statusBarIconView?.showError()
+        logger.info("updateUIForLoggedOut: showing default status")
+        debugLog("updateUIForLoggedOut: reset status bar icon to default")
+        statusBarIconView?.update(cost: 0)
         signInItem.isHidden = false
     }
 
