@@ -192,7 +192,7 @@ $ opencodebar status --json
       }
     ]
   },
-  "open_router": {
+  "openrouter": {
     "type": "pay-as-you-go",
     "cost": 37.42
   }

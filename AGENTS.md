@@ -283,7 +283,7 @@ func buildProviderSubmenu() -> [NSMenuItem] {
        - Menu Display Issue: Provider items appearing in different order on each refresh cycle
        - Root Cause: Looping over `[ProviderIdentifier: ProviderResult]` dictionary without explicit ordering
        - Solution: Create explicit display order array or use sorted keys when iterating
-       - Example: `let providerDisplayOrder = ["open_code_zen", "gemini_cli", "claude", "open_router", "antigravity"]`
+       - Example: `let providerDisplayOrder = ["opencode_zen", "gemini_cli", "claude", "openrouter", "antigravity"]`
        - Pattern: Define display order independently of data source to maintain consistent UI
      - **Menu Item Reference Deadlock**:
         - Shared NSMenuItem Reference: Referencing the same NSMenuItem instance (like `predictionPeriodMenu`) from multiple submenus can cause deadlocks
@@ -452,11 +452,70 @@ func buildProviderSubmenu() -> [NSMenuItem] {
         - Use menu item references to update in-place instead of full rebuild
       - Performance Impact: 30 days × full rebuild = ~30x slower than necessary
       - Pattern: `updateLoadingProgress(dayIndex)` → update single loading item → `updateMenu()` only on completion
-   - **Debug Log Frequency Control**:
-      - Excessive Logging: `logMenuStructure()` called on every menu update produces massive log output
-      - Symptom: Logs show repeated identical menu structures hundreds of times during progressive loading
-      - Solution: Use debug guards or log level controls for verbose structure logging
-      - Pattern: `#if DEBUG logMenuStructure()` or move to trace-level logging instead of debug
-      - Recommendation: Disable structure logging after initial validation, enable only when debugging menu issues
-  
-  <!-- opencode:reflection:end -->
+    - **Debug Log Frequency Control**:
+       - Excessive Logging: `logMenuStructure()` called on every menu update produces massive log output
+       - Symptom: Logs show repeated identical menu structures hundreds of times during progressive loading
+       - Solution: Use debug guards or log level controls for verbose structure logging
+       - Pattern: `#if DEBUG logMenuStructure()` or move to trace-level logging instead of debug
+       - Recommendation: Disable structure logging after initial validation, enable only when debugging menu issues
+     - **Silent Error Handling for Non-Critical Operations**:
+        - Empty Catch Blocks: Use `catch {}` for operations where failure doesn't impact core functionality
+        - Appropriate Use Cases: Optional config file reading, CLI binary detection, environment discovery
+        - Safety Consideration: Only use when operation is truly non-critical and has fallback behavior
+        - Example: TokenManager uses silent catches for finding opencode binary - app still works if not found
+        - Pattern: `try? readOptionalConfig()` or `} catch { // Ignore non-critical failures }`
+    - **AppleScript Path Escaping for Security**:
+       - Command Injection Risk: Direct string interpolation in AppleScript allows path manipulation attacks
+       - Solution: Use AppleScript's `quoted form of` to safely escape paths with spaces and special characters
+       - Security Impact: Prevents privilege escalation via crafted app bundle paths
+       - Implementation Pattern:
+         ```applescript
+         set cliPath to "\(cliPath)"
+         do shell script "mkdir -p /usr/local/bin && cp " & quoted form of cliPath & " /usr/local/bin/opencodebar && chmod +x /usr/local/bin/opencodebar"
+         ```
+       - Example Fix: CLI installation AppleScript now safely handles paths containing spaces or special characters
+    - **CLI Exit Code Consistency**:
+       - Empty Results Handling: Exit with error code 1 when no provider data is available (not 0)
+       - Error Output: Write error messages to stderr instead of stdout for proper scripting error detection
+       - Pattern: Check `guard !results.isEmpty`, write to `FileHandle.standardError`, exit with `CLIExitCode.generalError.rawValue`
+       - Automation Benefit: Scripts can detect failures via exit code 1 instead of success code 0
+    - **Timeout-Based Error Handling with withThrowingTaskGroup**:
+       - Prevent API Hangs: Use `withThrowingTaskGroup` with timeout task to prevent indefinite waits
+       - Configurable Timeout: Default 30s timeout allows slow APIs to complete but prevents deadlocks
+       - Cancellation: First success cancels all other tasks (timeout or fetch)
+       - Pattern: Add timeout task with `Task.sleep(nanoseconds:)` that throws after configured duration
+       - Example: ProviderManager.swift fetchWithTimeout() prevents unresponsive providers from blocking entire fetch cycle
+    - **Retry Pattern with Exponential Backoff**:
+       - Transient Failure Recovery: Retry operations that may fail temporarily with increasing delays
+       - Max Retries: Typically 3 attempts before giving up
+       - Backoff Delay: 500ms between retries is common pattern in this codebase
+       - Pattern: `for attempt in 1...maxRetries { try { return op } catch { await Task.sleep(backoff) } }`
+       - Example: OpenCodeZenProvider retries stats command up to 3 times with 500ms delays
+    - **Graceful Degradation for Multi-Account Providers**:
+       - Partial Success Handling: Continue processing when some accounts fail but others succeed
+       - Multi-Provider Architecture: Gemini CLI supports multiple accounts, treat as partial success if any succeed
+       - Failure Condition: Only throw error if ALL accounts fail, not just some
+       - Pattern: Loop through accounts with try-catch, collect successes, throw only if results array empty
+       - Example: GeminiCLIProvider shows quota for working accounts even if one account's auth fails
+    - **Specific Error Type Catching**:
+       - Precise Error Classification: Catch specific error types for better error messages and handling
+       - Distinguish Failure Modes: Separate decoding errors from network errors vs authentication failures
+       - Pattern: `catch let error as DecodingError { throw ProviderError.decodingError(...) } catch { ... }`
+       - Example: ClaudeProvider catches DecodingError separately to provide more helpful parsing error messages
+    - **Debug Log Emoji Prefix Convention**:
+       - Standardized Status Indicators: Use consistent emoji for log message types across all components
+       - Status Emojis: 🔵 (blue) for start, 🟡 (yellow) for in-progress, 🟢 (green) for success, 🔴 (red) for failure
+       - Action Emojis: ⌨️ for keyboard shortcuts, 📋 for menu structure, 🔄 for refresh operations
+       - Result Emojis: ✅ for success results, ❌ for errors, ⚠️ for warnings
+       - Pattern: `[🔵 ComponentName] Starting operation`, `[🟢 ComponentName] Operation completed: 42 items`
+       - Benefit: Easy visual scanning of logs to track execution flow and identify issues quickly
+    - **Consistent Debug Log Function Pattern**:
+       - Reusable Helper: Each component has `debugLog()` function for centralized logging control
+       - Append-Only: Always append to existing log file using `seekToEndOfFile()` to preserve history
+       - Timestamp Prefix: Include `[\(Date())]` at start of each message for chronological tracking
+       - Component Identification: Prefix messages with component name (e.g., "ProviderManager:", "OpenCodeZen:")
+       - Guard with #if DEBUG: Completely removes debug code from Release builds automatically
+       - Pattern: File-based logging to /tmp/provider_debug.log with graceful silent failure
+       - Safety: Use `try?` for file operations to avoid crashing if log file is inaccessible
+
+   <!-- opencode:reflection:end -->
