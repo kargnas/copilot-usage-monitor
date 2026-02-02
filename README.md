@@ -1,7 +1,7 @@
 # OpenCode Bar
 
 <p align="center">
-  <img src="docs/screenshot2.png" alt="OpenCode Bar Screenshot" width="40%">
+  <img src="docs/screenshot-subscription.png" alt="OpenCode Bar Screenshot" width="40%">
   <img src="docs/screenshot3.png" alt="OpenCode Bar Screenshot" width="40%">
 </p>
 
@@ -42,7 +42,8 @@
 ## Features
 
 ### Automatic Provider Detection
-- **Zero Configuration**: Reads your `~/.local/share/opencode/auth.json` automatically
+- **Zero Configuration**: Reads your OpenCode `auth.json` automatically
+- **Multi-path Support**: Searches `$XDG_DATA_HOME/opencode`, `~/.local/share/opencode`, and `~/Library/Application Support/opencode`
 - **Dynamic Updates**: New providers appear as you add them to OpenCode
 - **Smart Categorization**: Pay-as-you-go vs Quota-based providers displayed separately
 
@@ -57,10 +58,16 @@
 - **EOM Prediction**: Estimates end-of-month totals using weighted averages
 - **Add-on Cost Tracking**: Shows additional costs when exceeding limits
 
+### Subscription Settings
+- **Per-Provider Plans**: Configure your subscription tier for each provider
+- **Cost Tracking**: Accurate monthly cost calculation based on your plan
+- **Supported Plans**: Copilot ($10-$39/m), Kimi ($19-$199/m), custom amounts
+
 ### Convenience
 - **Auto Refresh**: Configurable intervals (10 seconds to 30 minutes)
 - **Launch at Login**: Start automatically with macOS
 - **Parallel Fetching**: All providers update simultaneously for speed
+- **Auto Updates**: Seamless background updates via Sparkle framework
 
 ## Installation
 
@@ -100,7 +107,7 @@ open ~/Library/Developer/Xcode/DerivedData/CopilotMonitor-*/Build/Products/Debug
 1. **Install OpenCode**: Make sure you have OpenCode installed and authenticated with your providers
 2. **Launch the app**: Run OpenCode Bar
 3. **View usage**: Click the menu bar icon to see all your provider usage
-4. **GitHub Copilot** (optional): Click "Sign In" to add Copilot monitoring via GitHub OAuth
+4. **GitHub Copilot** (optional): Automatically detected via browser cookies (Chrome, Brave, Arc, Edge supported)
 
 ### Command Line Interface (CLI)
 
@@ -236,23 +243,43 @@ Refresh (⌘R)
 Auto Refresh              ▸
 Settings                  ▸
 ─────────────────────────────
-Version 2.0.0
+Version 2.1.0
 Quit (⌘Q)
 ```
 
 ## How It Works
 
-1. **Token Discovery**: Reads authentication tokens from OpenCode's `auth.json`
-2. **Parallel Fetching**: Queries all provider APIs simultaneously
-3. **Smart Caching**: Falls back to cached data on network errors
-4. **Graceful Degradation**: Shows available providers even if some fail
+1. **Token Discovery**: Reads authentication tokens from OpenCode's `auth.json` (with multi-path fallback)
+2. **Cookie Detection**: Finds GitHub Copilot sessions from Chrome, Brave, Arc, or Edge (with profile support)
+3. **Parallel Fetching**: Queries all provider APIs simultaneously
+4. **Smart Caching**: Falls back to cached data on network errors
+5. **Graceful Degradation**: Shows available providers even if some fail
 
 ### Privacy & Security
 
 - **Local Only**: All data stays on your machine
 - **No Third-party Servers**: Direct communication with provider APIs
 - **Read-only Access**: Uses existing OpenCode tokens (no additional permissions)
-- **Secure Storage**: GitHub Copilot uses OAuth session without storing passwords
+- **Browser Cookie Access**: GitHub Copilot reads session cookies from your default browser (read-only, no passwords stored)
+
+## Troubleshooting
+
+### "No providers found" or auth.json not detected
+The app searches for `auth.json` in these locations (in order):
+1. `$XDG_DATA_HOME/opencode/auth.json` (if XDG_DATA_HOME is set)
+2. `~/.local/share/opencode/auth.json` (default)
+3. `~/Library/Application Support/opencode/auth.json` (macOS fallback)
+
+### GitHub Copilot not showing
+- Make sure you're signed into GitHub in a supported browser (Chrome, Brave, Arc, or Edge)
+- The app reads session cookies from browser profiles—no manual login required
+- Check that your browser has active GitHub cookies (try visiting github.com)
+
+### OpenCode CLI commands failing
+The app dynamically searches for the `opencode` binary in:
+- Current PATH (`which opencode`)
+- Login shell PATH
+- Common install locations: `~/.opencode/bin/opencode`, `/usr/local/bin/opencode`, etc.
 
 ## Contributing
 
