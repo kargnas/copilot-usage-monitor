@@ -130,25 +130,25 @@ jobs:
           
           # Sign all executables in frameworks (deepest level first)
           # This includes Sparkle's Autoupdate, Updater.app, Downloader.xpc, etc.
-          find "$APP_PATH/Contents/Frameworks" -type f -perm +111 | while read binary; do
+          find "$APP_PATH/Contents/Frameworks" -type f -perm +111 | while read -r binary; do
             echo "Signing: $binary"
             codesign --force --sign "Developer ID Application" --timestamp --options runtime "$binary" 2>/dev/null || true
           done
           
           # Sign XPC services
-          find "$APP_PATH/Contents/Frameworks" -name "*.xpc" | while read xpc; do
+          find "$APP_PATH/Contents/Frameworks" -name "*.xpc" | while read -r xpc; do
             echo "Signing XPC: $xpc"
             codesign --force --sign "Developer ID Application" --timestamp --options runtime "$xpc"
           done
           
           # Sign helper apps inside frameworks  
-          find "$APP_PATH/Contents/Frameworks" -name "*.app" | while read app; do
+          find "$APP_PATH/Contents/Frameworks" -name "*.app" | while read -r app; do
             echo "Signing helper app: $app"
             codesign --force --sign "Developer ID Application" --timestamp --options runtime "$app"
           done
           
           # Sign frameworks
-          find "$APP_PATH/Contents/Frameworks" -name "*.framework" | while read framework; do
+          find "$APP_PATH/Contents/Frameworks" -name "*.framework" | while read -r framework; do
             echo "Signing framework: $framework"
             codesign --force --sign "Developer ID Application" --timestamp --options runtime "$framework"
           done
