@@ -6,6 +6,29 @@ import os.log
 
 private let logger = Logger(subsystem: "com.opencodeproviders", category: "StatusBarController")
 
+enum UsageFetcherError: LocalizedError {
+    case noCustomerId
+    case noUsageData
+    case invalidJSResult
+    case parsingFailed(String)
+    case networkError(Error)
+
+    var errorDescription: String? {
+        switch self {
+        case .noCustomerId:
+            return "Customer ID not found"
+        case .noUsageData:
+            return "Usage data not found"
+        case .invalidJSResult:
+            return "Invalid JS result"
+        case .parsingFailed(let detail):
+            return "Parsing failed: \(detail)"
+        case .networkError(let error):
+            return "Network error: \(error.localizedDescription)"
+        }
+    }
+}
+
 @MainActor
 final class StatusBarController: NSObject {
     private var statusItem: NSStatusItem?
@@ -23,9 +46,11 @@ final class StatusBarController: NSObject {
 
     // History fetch properties
     private var historyFetchTimer: Timer?
+    private var customerId: String?
+
+    // History properties (for Copilot provider via CopilotHistoryService)
     private var usageHistory: UsageHistory?
     private var lastHistoryFetchResult: HistoryFetchResult = .none
-    private var customerId: String?
 
     // History UI properties
     private var historySubmenu: NSMenu!
@@ -177,18 +202,6 @@ final class StatusBarController: NSObject {
 
         menu.addItem(NSMenuItem.separator())
 
-        signInItem = NSMenuItem(title: "Sign In", action: #selector(signInClicked), keyEquivalent: "")
-        signInItem.image = NSImage(systemSymbolName: "person.crop.circle.badge.checkmark", accessibilityDescription: "Sign In")
-        signInItem.target = self
-        signInItem.isHidden = true
-        menu.addItem(signInItem)
-
-        resetLoginItem = NSMenuItem(title: "Reset Login", action: #selector(resetLoginClicked), keyEquivalent: "")
-        resetLoginItem.image = NSImage(systemSymbolName: "arrow.counterclockwise", accessibilityDescription: "Reset Login")
-        resetLoginItem.target = self
-        resetLoginItem.isHidden = true
-        menu.addItem(resetLoginItem)
-
         launchAtLoginItem = NSMenuItem(title: "Launch at Login", action: #selector(launchAtLoginClicked), keyEquivalent: "")
         launchAtLoginItem.image = NSImage(systemSymbolName: "power", accessibilityDescription: "Launch at Login")
         launchAtLoginItem.target = self
@@ -293,23 +306,6 @@ final class StatusBarController: NSObject {
     }
 
     private func setupNotificationObservers() {
-        NotificationCenter.default.addObserver(forName: Notification.Name("billingPageLoaded"), object: nil, queue: .main) { [weak self] _ in
-            logger.info("Notification received: billingPageLoaded")
-            guard let self = self else { return }
-            Task { @MainActor [weak self] in
-                self?.fetchUsage()
-                self?.startHistoryFetchTimer()
-            }
-        }
-        NotificationCenter.default.addObserver(forName: Notification.Name("sessionExpired"), object: nil, queue: .main) { [weak self] _ in
-            logger.info("Notification received: sessionExpired")
-            guard let self = self else { return }
-            Task { @MainActor [weak self] in
-                self?.updateUIForLoggedOut()
-                self?.historyFetchTimer?.invalidate()
-                self?.historyFetchTimer = nil
-            }
-        }
         NotificationCenter.default.addObserver(forName: .openCodeZenHistoryUpdated, object: nil, queue: .main) { [weak self] _ in
             guard let self = self else { return }
             Task { @MainActor [weak self] in
@@ -340,7 +336,7 @@ final class StatusBarController: NSObject {
 
     func triggerRefresh() {
         logger.info("triggerRefresh started")
-        AuthManager.shared.loadBillingPage()
+        fetchUsage()
     }
 
     private func fetchUsage() {
@@ -357,9 +353,6 @@ final class StatusBarController: NSObject {
 
         debugLog("fetchUsage: creating Task")
         Task { @MainActor in
-            debugLog("fetchUsage Task: calling performFetchUsage")
-            await performFetchUsage()
-            debugLog("fetchUsage Task: performFetchUsage completed")
             debugLog("fetchUsage Task: calling fetchMultiProviderData")
             await fetchMultiProviderData()
             debugLog("fetchUsage Task: fetchMultiProviderData completed")
@@ -369,255 +362,6 @@ final class StatusBarController: NSObject {
         debugLog("fetchUsage: Task created")
     }
 
-    // MARK: - Fetch Usage Helpers (Split for Swift compiler type-check performance on older Xcode)
-
-    private func performFetchUsage() async {
-        debugLog("performFetchUsage: started")
-        let webView = AuthManager.shared.webView
-        debugLog("performFetchUsage: got webView")
-        let customerId = await fetchCustomerId(webView: webView)
-        debugLog("performFetchUsage: fetchCustomerId returned \(customerId ?? "nil")")
-
-        if let validId = customerId {
-            self.customerId = validId
-            debugLog("performFetchUsage: calling fetchAndProcessUsageData")
-            let success = await fetchAndProcessUsageData(webView: webView, customerId: validId)
-            debugLog("performFetchUsage: fetchAndProcessUsageData returned \(success)")
-            if success {
-                debugLog("performFetchUsage: success, returning (isFetching will be reset by Task)")
-                return
-            }
-        }
-
-        debugLog("performFetchUsage: calling handleFetchFallback")
-        handleFetchFallback()
-        debugLog("performFetchUsage: completed")
-    }
-
-    private func fetchCustomerId(webView: WKWebView) async -> String? {
-        if let apiId = await fetchCustomerIdFromAPI(webView: webView) {
-            return apiId
-        }
-        if let domId = await fetchCustomerIdFromDOM(webView: webView) {
-            return domId
-        }
-        if let htmlId = await fetchCustomerIdFromHTML(webView: webView) {
-            return htmlId
-        }
-        return nil
-    }
-
-    private func fetchCustomerIdFromAPI(webView: WKWebView) async -> String? {
-        logger.info("fetchUsage: [Step 1] Attempting to obtain ID via API(/api/v3/user)")
-
-        let userApiJS = """
-        return await (async function() {
-            try {
-                const response = await fetch('/api/v3/user', {
-                    headers: { 'Accept': 'application/json' }
-                });
-                if (!response.ok) return JSON.stringify({ error: 'HTTP ' + response.status });
-                const data = await response.json();
-                return JSON.stringify(data);
-            } catch (e) {
-                return JSON.stringify({ error: e.toString() });
-            }
-        })()
-        """
-
-        do {
-            let result = try await webView.callAsyncJavaScript(userApiJS, arguments: [:], in: nil, contentWorld: .defaultClient)
-
-            if let jsonString = result as? String,
-               let data = jsonString.data(using: .utf8),
-               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-               let id = json["id"] as? Int {
-                logger.info("fetchUsage: API ID obtained successfully - \(id)")
-                return String(id)
-            }
-        } catch {
-            logger.error("fetchUsage: Error during API call - \(error.localizedDescription)")
-        }
-
-        return nil
-    }
-
-    private func fetchCustomerIdFromDOM(webView: WKWebView) async -> String? {
-        logger.info("fetchUsage: [Step 2] Attempting DOM extraction")
-
-        let extractionJS = """
-        return (function() {
-            const el = document.querySelector('script[data-target="react-app.embeddedData"]');
-            if (el) {
-                try {
-                    const data = JSON.parse(el.textContent);
-                    if (data && data.payload && data.payload.customer && data.payload.customer.customerId) {
-                        return data.payload.customer.customerId.toString();
-                    }
-                } catch(e) {}
-            }
-            return null;
-        })()
-        """
-
-        if let extracted = try? await evalJSONString(extractionJS, in: webView) {
-            logger.info("fetchUsage: customerId extracted from DOM successfully - \(extracted)")
-            return extracted
-        }
-
-        return nil
-    }
-
-    private func fetchCustomerIdFromHTML(webView: WKWebView) async -> String? {
-        logger.info("fetchUsage: [Step 3] Attempting HTML Regex")
-
-        let htmlJS = "return document.documentElement.outerHTML"
-        guard let html = try? await webView.callAsyncJavaScript(htmlJS, arguments: [:], in: nil, contentWorld: .defaultClient) as? String else {
-            return nil
-        }
-
-        let patterns = [
-            #"customerId":(\d+)"#,
-            #"customerId&quot;:(\d+)"#,
-            #"customer_id=(\d+)"#,
-            #"data-customer-id="(\d+)""#
-        ]
-
-        for pattern in patterns {
-            if let customerId = extractCustomerIdWithPattern(pattern, from: html) {
-                logger.info("fetchUsage: ID found in HTML - \(customerId)")
-                return customerId
-            }
-        }
-
-        return nil
-    }
-
-    private func extractCustomerIdWithPattern(_ pattern: String, from html: String) -> String? {
-        guard let regex = try? NSRegularExpression(pattern: pattern),
-              let match = regex.firstMatch(in: html, range: NSRange(html.startIndex..., in: html)),
-              let range = Range(match.range(at: 1), in: html) else {
-            return nil
-        }
-        return String(html[range])
-    }
-
-    private func fetchAndProcessUsageData(webView: WKWebView, customerId: String) async -> Bool {
-        debugLog("fetchAndProcessUsageData: started")
-        let cardJS = """
-        return await (async function() {
-            try {
-                const res = await fetch('/settings/billing/copilot_usage_card?customer_id=\(customerId)&period=3', {
-                    headers: { 'Accept': 'application/json', 'x-requested-with': 'XMLHttpRequest' }
-                });
-                const text = await res.text();
-                try {
-                    const json = JSON.parse(text);
-                    json._debug_timestamp = new Date().toISOString();
-                    return json;
-                } catch (e) {
-                    return { error: 'JSON Parse Error', body: text };
-                }
-            } catch(e) { return { error: e.toString() }; }
-        })()
-        """
-
-        do {
-            debugLog("fetchAndProcessUsageData: calling JS")
-            let result = try await webView.callAsyncJavaScript(cardJS, arguments: [:], in: nil, contentWorld: .defaultClient)
-            debugLog("fetchAndProcessUsageData: JS completed")
-
-            guard let rootDict = result as? [String: Any] else {
-                debugLog("fetchAndProcessUsageData: rootDict cast failed")
-                return false
-            }
-
-            debugLog("fetchAndProcessUsageData: parsing usage")
-            if let usage = parseUsageFromResponse(rootDict) {
-                currentUsage = usage
-                lastFetchTime = Date()
-                debugLog("fetchAndProcessUsageData: calling updateUIForSuccess")
-                updateUIForSuccess(usage: usage)
-                debugLog("fetchAndProcessUsageData: updateUIForSuccess completed")
-                debugLog("fetchAndProcessUsageData: calling saveCache")
-                saveCache(usage: usage)
-                debugLog("fetchAndProcessUsageData: saveCache completed")
-                logger.info("fetchUsage: Success")
-                debugLog("fetchAndProcessUsageData: returning true")
-                return true
-            }
-            debugLog("fetchAndProcessUsageData: parseUsageFromResponse returned nil")
-        } catch {
-            debugLog("fetchAndProcessUsageData: JS error - \(error.localizedDescription)")
-            logger.error("fetchUsage: Error during JS execution - \(error.localizedDescription)")
-        }
-
-        debugLog("fetchAndProcessUsageData: returning false")
-        return false
-    }
-
-    private func parseUsageFromResponse(_ rootDict: [String: Any]) -> CopilotUsage? {
-        var dict = rootDict
-        if let payload = rootDict["payload"] as? [String: Any] {
-            dict = payload
-        } else if let data = rootDict["data"] as? [String: Any] {
-            dict = data
-        }
-
-        logger.info("fetchUsage: Attempting data parsing (Keys: \(dict.keys.joined(separator: ", ")))")
-
-        let netBilledAmount = parseDoubleValue(from: dict, keys: ["netBilledAmount", "net_billed_amount"])
-        let netQuantity = parseDoubleValue(from: dict, keys: ["netQuantity", "net_quantity"])
-        let discountQuantity = parseDoubleValue(from: dict, keys: ["discountQuantity", "discount_quantity"])
-        let limit = parseIntValue(from: dict, keys: ["userPremiumRequestEntitlement", "user_premium_request_entitlement", "quantity"])
-        let filteredLimit = parseIntValue(from: dict, keys: ["filteredUserPremiumRequestEntitlement"])
-
-        return CopilotUsage(
-            netBilledAmount: netBilledAmount,
-            netQuantity: netQuantity,
-            discountQuantity: discountQuantity,
-            userPremiumRequestEntitlement: limit,
-            filteredUserPremiumRequestEntitlement: filteredLimit
-        )
-    }
-
-    private func parseDoubleValue(from dict: [String: Any], keys: [String]) -> Double {
-        for key in keys {
-            if let value = dict[key] as? Double {
-                return value
-            }
-            if let value = dict[key] as? Int {
-                return Double(value)
-            }
-            if let value = dict[key] as? NSNumber {
-                return value.doubleValue
-            }
-        }
-        return 0.0
-    }
-
-    private func parseIntValue(from dict: [String: Any], keys: [String]) -> Int {
-        for key in keys {
-            if let value = dict[key] as? Int {
-                return value
-            }
-            if let value = dict[key] as? Double {
-                return Int(value)
-            }
-        }
-        return 0
-    }
-
-    private func handleFetchFallback() {
-        if let cached = loadCache() {
-            updateUIForSuccess(usage: cached.usage)
-            isFetching = false
-        } else {
-            handleFetchError(UsageFetcherError.noUsageData)
-            isFetching = false
-        }
-    }
-
     // MARK: - Multi-Provider Fetch
 
      private func fetchMultiProviderData() async {
@@ -625,7 +369,7 @@ final class StatusBarController: NSObject {
            logger.info("🔵 [StatusBarController] fetchMultiProviderData() started")
            
            let enabledProviders = await ProviderManager.shared.getAllProviders().filter { provider in
-               isProviderEnabled(provider.identifier) && provider.identifier != .copilot
+               isProviderEnabled(provider.identifier)
            }
            debugLog("🔵 fetchMultiProviderData: enabledProviders count=\(enabledProviders.count)")
            logger.debug("🔵 [StatusBarController] enabledProviders: \(enabledProviders.map { $0.identifier.displayName }.joined(separator: ", "))")
@@ -650,7 +394,7 @@ final class StatusBarController: NSObject {
            logger.info("🟢 [StatusBarController] fetchMultiProviderData: fetchAll() returned \(fetchResult.results.count) results, \(fetchResult.errors.count) errors")
 
            let filteredResults = fetchResult.results.filter { identifier, _ in
-               isProviderEnabled(identifier) && identifier != .copilot
+               isProviderEnabled(identifier)
            }
            let filteredNames = filteredResults.keys.map { $0.displayName }.joined(separator: ", ")
            debugLog("🟢 fetchMultiProviderData: filteredResults count=\(filteredResults.count)")
@@ -659,7 +403,7 @@ final class StatusBarController: NSObject {
            self.providerResults = filteredResults
            
            let filteredErrors = fetchResult.errors.filter { identifier, _ in
-               isProviderEnabled(identifier) && identifier != .copilot
+               isProviderEnabled(identifier)
            }
            self.lastProviderErrors = filteredErrors
 
@@ -733,15 +477,14 @@ final class StatusBarController: NSObject {
           debugLog("updateMultiProviderMenu: removing \(itemsToRemove.count) old items")
           itemsToRemove.forEach { menu.removeItem($0) }
 
-          let hasCopilotData = currentUsage != nil
-          debugLog("updateMultiProviderMenu: hasCopilotData=\(hasCopilotData), providerResults.count=\(providerResults.count)")
+          debugLog("updateMultiProviderMenu: providerResults.count=\(providerResults.count)")
 
           if !providerResults.isEmpty {
               let providerNames = providerResults.keys.map { $0.rawValue }.joined(separator: ", ")
               debugLog("updateMultiProviderMenu: providers=[\(providerNames)]")
           }
 
-          guard !providerResults.isEmpty || hasCopilotData else {
+          guard !providerResults.isEmpty else {
               debugLog("updateMultiProviderMenu: no data, returning")
               return
           }
@@ -773,63 +516,6 @@ final class StatusBarController: NSObject {
           insertIndex += 1
 
          var hasPayAsYouGo = false
-
-           // Copilot Add-on (always show, even when $0.00)
-            if let copilotUsage = currentUsage {
-                hasPayAsYouGo = true
-               let addOnItem = NSMenuItem(
-                   title: String(format: "Copilot Add-on ($%.2f)", copilotUsage.netBilledAmount),
-                   action: nil,
-                   keyEquivalent: ""
-               )
-               addOnItem.image = iconForProvider(.copilot)
-               addOnItem.tag = 999
-
-               let submenu = NSMenu()
-               let overageItem = NSMenuItem()
-               overageItem.view = createDisabledLabelView(text: String(format: "Overage Requests: %.0f", copilotUsage.netQuantity))
-               submenu.addItem(overageItem)
-
-                 submenu.addItem(NSMenuItem.separator())
-                 let historyItem = NSMenuItem(title: "Usage History", action: nil, keyEquivalent: "")
-                 historyItem.image = NSImage(systemSymbolName: "chart.bar.fill", accessibilityDescription: "Usage History")
-                 debugLog("updateMultiProviderMenu: calling createCopilotHistorySubmenu")
-                 historyItem.submenu = createCopilotHistorySubmenu()
-                 debugLog("updateMultiProviderMenu: createCopilotHistorySubmenu completed")
-                  submenu.addItem(historyItem)
-
-                 submenu.addItem(NSMenuItem.separator())
-
-                 if let email = providerResults[.copilot]?.details?.email {
-                     let emailItem = NSMenuItem()
-                     emailItem.view = createDisabledLabelView(
-                         text: "Email: \(email)",
-                         icon: NSImage(systemSymbolName: "person.circle", accessibilityDescription: "User Email"),
-                         multiline: false
-                     )
-                     submenu.addItem(emailItem)
-                 }
-
-                 let authItem = NSMenuItem()
-                  authItem.view = createDisabledLabelView(
-                      text: "Token From: Browser Cookies (Chrome/Brave/Arc/Edge)",
-                      icon: NSImage(systemSymbolName: "key", accessibilityDescription: "Auth Source"),
-                      multiline: true
-                  )
-                  submenu.addItem(authItem)
-
-                  submenu.addItem(NSMenuItem.separator())
-
-                  let openBillingItem = NSMenuItem(title: "Open Billing", action: #selector(openBillingClicked), keyEquivalent: "b")
-                  openBillingItem.image = NSImage(systemSymbolName: "creditcard", accessibilityDescription: "Open Billing")
-                  openBillingItem.target = self
-                  submenu.addItem(openBillingItem)
-
-                  addOnItem.submenu = submenu
-
-                menu.insertItem(addOnItem, at: insertIndex)
-                insertIndex += 1
-           }
 
             let payAsYouGoOrder: [ProviderIdentifier] = [.openRouter, .openCodeZen]
             for identifier in payAsYouGoOrder {
@@ -868,6 +554,70 @@ final class StatusBarController: NSObject {
                     insertIndex += 1
                 }
            }
+
+            // Copilot Add-on (always show, even when $0.00)
+            if isProviderEnabled(.copilot) {
+                if let copilotResult = providerResults[.copilot],
+                   let details = copilotResult.details,
+                   let overageCost = details.copilotOverageCost {
+                    hasPayAsYouGo = true
+                    let addOnItem = NSMenuItem(
+                        title: String(format: "Copilot Add-on ($%.2f)", overageCost),
+                        action: nil, keyEquivalent: ""
+                    )
+                    addOnItem.image = iconForProvider(.copilot)
+                    addOnItem.tag = 999
+
+                    let submenu = NSMenu()
+                    let overageRequests = details.copilotOverageRequests ?? 0
+                    let overageItem = NSMenuItem()
+                    overageItem.view = createDisabledLabelView(text: String(format: "Overage Requests: %.0f", overageRequests))
+                    submenu.addItem(overageItem)
+
+                    submenu.addItem(NSMenuItem.separator())
+                    let historyItem = NSMenuItem(title: "Usage History", action: nil, keyEquivalent: "")
+                    historyItem.image = NSImage(systemSymbolName: "chart.bar.fill", accessibilityDescription: "Usage History")
+                    debugLog("updateMultiProviderMenu: calling createCopilotHistorySubmenu")
+                    historyItem.submenu = createCopilotHistorySubmenu()
+                    debugLog("updateMultiProviderMenu: createCopilotHistorySubmenu completed")
+                    submenu.addItem(historyItem)
+
+                    submenu.addItem(NSMenuItem.separator())
+
+                    if let email = details.email {
+                        let emailItem = NSMenuItem()
+                        emailItem.view = createDisabledLabelView(
+                            text: "Email: \(email)",
+                            icon: NSImage(systemSymbolName: "person.circle", accessibilityDescription: "User Email"),
+                            multiline: false
+                        )
+                        submenu.addItem(emailItem)
+                    }
+
+                    if let authSource = details.authSource {
+                        let authItem = NSMenuItem()
+                        authItem.view = createDisabledLabelView(
+                            text: "Token From: \(authSource)",
+                            icon: NSImage(systemSymbolName: "key", accessibilityDescription: "Auth Source"),
+                            multiline: true
+                        )
+                        submenu.addItem(authItem)
+                    }
+
+                    addOnItem.submenu = submenu
+                    menu.insertItem(addOnItem, at: insertIndex)
+                    insertIndex += 1
+                    debugLog("updateMultiProviderMenu: Copilot Add-on inserted with cost $\(overageCost)")
+                } else if loadingProviders.contains(.copilot) {
+                    hasPayAsYouGo = true
+                    let item = NSMenuItem(title: "Copilot Add-on (Loading...)", action: nil, keyEquivalent: "")
+                    item.image = iconForProvider(.copilot)
+                    item.isEnabled = false
+                    item.tag = 999
+                    menu.insertItem(item, at: insertIndex)
+                    insertIndex += 1
+                }
+            }
 
         if !hasPayAsYouGo {
             let noItem = NSMenuItem()
@@ -1411,21 +1161,6 @@ final class StatusBarController: NSObject {
         fetchUsage()
     }
 
-    @objc private func resetLoginClicked() {
-        Task { @MainActor in
-            await AuthManager.shared.resetSession()
-            clearCaches()
-            currentUsage = nil
-            customerId = nil
-            usageHistory = nil
-            lastHistoryFetchResult = .none
-            historyFetchTimer?.invalidate()
-            historyFetchTimer = nil
-            updateUIForLoggedOut()
-            NotificationCenter.default.post(name: Notification.Name("sessionExpired"), object: nil)
-        }
-    }
-
     @objc private func openBillingClicked() {
         if let url = URL(string: "https://github.com/settings/billing/premium_requests_usage") { NSWorkspace.shared.open(url) }
     }
@@ -1465,6 +1200,9 @@ final class StatusBarController: NSObject {
         dateFormatter.dateFormat = "yyyy-MM-dd HH:mm zzz"
         errorLogText += "Time: \(dateFormatter.string(from: Date()))\n"
         errorLogText += "App Version: \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "Unknown")\n"
+        errorLogText += "\n"
+        errorLogText += TokenManager.shared.getDebugEnvironmentInfo()
+        errorLogText += "\n"
         
         let alert = NSAlert()
         alert.messageText = "Provider Errors Detected"
@@ -1594,20 +1332,8 @@ final class StatusBarController: NSObject {
         launchAtLoginItem.state = SMAppService.mainApp.status == .enabled ? .on : .off
     }
 
-    private func saveCache(usage: CopilotUsage) {
-        if let data = try? JSONEncoder().encode(CachedUsage(usage: usage, timestamp: Date())) {
-            UserDefaults.standard.set(data, forKey: "copilot.usage.cache")
-        }
-    }
-
     private func clearCaches() {
-        UserDefaults.standard.removeObject(forKey: "copilot.usage.cache")
         UserDefaults.standard.removeObject(forKey: "copilot.history.cache")
-    }
-
-    private func loadCache() -> CachedUsage? {
-        guard let data = UserDefaults.standard.data(forKey: "copilot.usage.cache") else { return nil }
-        return try? JSONDecoder().decode(CachedUsage.self, from: data)
     }
 
     private func saveHistoryCache(_ history: UsageHistory) {
@@ -1644,153 +1370,6 @@ final class StatusBarController: NSObject {
         updateHistorySubmenu()
     }
 
-    private func fetchUsageHistoryNow() {
-        guard let customerId = self.customerId else {
-            logger.warning("fetchUsageHistoryNow: customerId is nil, skipping")
-            return
-        }
-
-        logger.info("fetchUsageHistoryNow: started, customerId=\(customerId)")
-
-        let webView = AuthManager.shared.webView
-
-        Task { @MainActor in
-            let js = """
-            return await (async function() {
-                try {
-                    const [res3, res5] = await Promise.all([
-                        fetch('/settings/billing/copilot_usage_table?customer_id=\(customerId)&group=0&period=3&query=&page=1', {
-                            headers: { 'Accept': 'application/json', 'x-requested-with': 'XMLHttpRequest' }
-                        }),
-                        fetch('/settings/billing/copilot_usage_table?customer_id=\(customerId)&group=0&period=5&query=&page=1', {
-                            headers: { 'Accept': 'application/json', 'x-requested-with': 'XMLHttpRequest' }
-                        })
-                    ]);
-                    const [data3, data5] = await Promise.all([res3.json(), res5.json()]);
-                    return { period3: data3, period5: data5 };
-                } catch(e) { return { error: e.toString() }; }
-            })()
-            """
-
-            do {
-                let result = try await webView.callAsyncJavaScript(js, arguments: [:], in: nil, contentWorld: .defaultClient)
-
-                guard let rootDict = result as? [String: Any] else {
-                    logger.error("fetchUsageHistoryNow: failed - result is not dictionary")
-                    self.lastHistoryFetchResult = self.usageHistory != nil ? .failedWithCache : .failedNoCache
-                    return
-                }
-
-                if let error = rootDict["error"] as? String {
-                    logger.error("fetchUsageHistoryNow: failed - JS error: \(error)")
-                    self.lastHistoryFetchResult = self.usageHistory != nil ? .failedWithCache : .failedNoCache
-                    return
-                }
-
-                let dateFormatter = DateFormatter()
-                dateFormatter.dateFormat = "yyyy-MM-dd HH:mm:ss Z 'utc'"
-                dateFormatter.locale = Locale(identifier: "en_US_POSIX")
-                dateFormatter.timeZone = TimeZone(identifier: "UTC")
-
-                var mergedByDate: [Date: DailyUsage] = [:]
-
-                for periodKey in ["period5", "period3"] {
-                    guard let periodDict = rootDict[periodKey] as? [String: Any],
-                          let table = periodDict["table"] as? [String: Any],
-                          let rows = table["rows"] as? [[String: Any]] else {
-                        continue
-                    }
-
-                    for row in rows {
-                        guard let cells = row["cells"] as? [[String: Any]],
-                              cells.count >= 5 else {
-                            continue
-                        }
-
-                        guard let dateStr = cells[0]["sortValue"] as? String,
-                              let date = dateFormatter.date(from: dateStr) else {
-                            continue
-                        }
-
-                        let includedRequests = parseDoubleFromCell(cells[1]["value"])
-                        let billedRequests = parseDoubleFromCell(cells[2]["value"])
-                        let grossAmount = parseCurrencyFromCell(cells[3]["value"])
-                        let billedAmount = parseCurrencyFromCell(cells[4]["value"])
-
-                        let usage = DailyUsage(
-                            date: date,
-                            includedRequests: includedRequests,
-                            billedRequests: billedRequests,
-                            grossAmount: grossAmount,
-                            billedAmount: billedAmount
-                        )
-
-                        if let existing = mergedByDate[date] {
-                            let existingTotal = existing.includedRequests + existing.billedRequests
-                            let newTotal = usage.includedRequests + usage.billedRequests
-                            if newTotal > existingTotal {
-                                mergedByDate[date] = usage
-                            }
-                        } else {
-                            mergedByDate[date] = usage
-                        }
-                    }
-                }
-
-                var dailyUsages = Array(mergedByDate.values)
-                dailyUsages.sort { $0.date > $1.date }
-
-                let history = UsageHistory(fetchedAt: Date(), days: dailyUsages)
-                self.usageHistory = history
-                self.lastHistoryFetchResult = .success
-                self.saveHistoryCache(history)
-
-                logger.info("fetchUsageHistoryNow: completed, days.count=\(history.days.count), totalRequests=\(history.totalRequests)")
-                self.updateHistorySubmenu()
-            } catch {
-                logger.error("fetchUsageHistoryNow: failed - \(error.localizedDescription)")
-                self.handleHistoryFetchFailure()
-                self.updateHistorySubmenu()
-            }
-        }
-    }
-
-    private func parseDoubleFromCell(_ value: Any?) -> Double {
-        guard let str = value as? String else { return 0 }
-        let cleaned = str.replacingOccurrences(of: ",", with: "")
-        return Double(cleaned) ?? 0
-    }
-
-    private func parseCurrencyFromCell(_ value: Any?) -> Double {
-        guard let str = value as? String else { return 0 }
-        let cleaned = str.replacingOccurrences(of: "$", with: "").replacingOccurrences(of: ",", with: "")
-        return Double(cleaned) ?? 0
-    }
-
-    private func handleHistoryFetchFailure() {
-        if let cached = loadHistoryCache() {
-            if hasMonthChanged(cached.fetchedAt) {
-                UserDefaults.standard.removeObject(forKey: "copilot.history.cache")
-                self.usageHistory = nil
-                self.lastHistoryFetchResult = .failedNoCache
-            } else {
-                self.usageHistory = cached
-                self.lastHistoryFetchResult = .failedWithCache
-            }
-        } else {
-            self.usageHistory = nil
-            self.lastHistoryFetchResult = .failedNoCache
-        }
-    }
-
-    private func startHistoryFetchTimer() {
-        historyFetchTimer?.invalidate()
-        fetchUsageHistoryNow()
-        historyFetchTimer = Timer.scheduledTimer(withTimeInterval: 5 * 60, repeats: true) { [weak self] _ in
-            self?.fetchUsageHistoryNow()
-        }
-    }
-
     func getHistoryUIState() -> HistoryUIState {
         guard let history = usageHistory else {
             return HistoryUIState(history: nil, prediction: nil, isStale: false, hasNoData: true)
@@ -1798,14 +1377,9 @@ final class StatusBarController: NSObject {
 
         let stale = isHistoryStale(history)
 
-        var prediction: UsagePrediction?
-        if let currentUsage = self.currentUsage {
-            prediction = usagePredictor.predict(history: history, currentUsage: currentUsage)
-        }
-
         return HistoryUIState(
             history: history,
-            prediction: prediction,
+            prediction: nil,
             isStale: stale && lastHistoryFetchResult == .failedWithCache,
             hasNoData: false
         )

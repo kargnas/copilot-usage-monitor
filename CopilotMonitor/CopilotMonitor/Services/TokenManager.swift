@@ -62,8 +62,20 @@ struct GeminiTokenResponse: Codable {
 
 // MARK: - TokenManager Singleton
 
-final class TokenManager {
+final class TokenManager: @unchecked Sendable {
     static let shared = TokenManager()
+    
+    /// Serial queue for thread-safe file access
+    private let queue = DispatchQueue(label: "com.opencodeproviders.TokenManager")
+    
+    /// Cached auth data with timestamp
+    private var cachedAuth: OpenCodeAuth?
+    private var cacheTimestamp: Date?
+    private let cacheValiditySeconds: TimeInterval = 30 // Cache for 30 seconds
+    
+    /// Cached antigravity accounts
+    private var cachedAntigravityAccounts: AntigravityAccounts?
+    private var antigravityCacheTimestamp: Date?
 
     private init() {
         logger.info("TokenManager initialized")
@@ -111,61 +123,79 @@ final class TokenManager {
     /// Useful for displaying in UI to help users troubleshoot
     private(set) var lastFoundAuthPath: URL?
 
-    /// Reads OpenCode auth tokens with fallback paths
-    /// Tries multiple locations in priority order until a valid auth.json is found
-    /// - Returns: OpenCodeAuth structure if file exists and is valid, nil otherwise
+    /// Thread-safe read of OpenCode auth tokens with caching
     func readOpenCodeAuth() -> OpenCodeAuth? {
-        let fileManager = FileManager.default
-        let paths = getAuthFilePaths()
-
-        for authPath in paths {
-            guard fileManager.fileExists(atPath: authPath.path) else {
-                logger.debug("Auth file not found at: \(authPath.path)")
-                continue
+        return queue.sync {
+            // Return cached data if still valid
+            if let cached = cachedAuth,
+               let timestamp = cacheTimestamp,
+               Date().timeIntervalSince(timestamp) < cacheValiditySeconds {
+                return cached
             }
-
-            do {
-                let data = try Data(contentsOf: authPath)
-                let auth = try JSONDecoder().decode(OpenCodeAuth.self, from: data)
-                lastFoundAuthPath = authPath
-                logger.info("Successfully loaded OpenCode auth from: \(authPath.path)")
-                return auth
-            } catch {
-                logger.warning("Failed to parse auth at \(authPath.path): \(error.localizedDescription)")
-                continue
+            
+            let fileManager = FileManager.default
+            let paths = getAuthFilePaths()
+            
+            for authPath in paths {
+                guard fileManager.fileExists(atPath: authPath.path) else {
+                    continue
+                }
+                
+                do {
+                    let data = try Data(contentsOf: authPath)
+                    let auth = try JSONDecoder().decode(OpenCodeAuth.self, from: data)
+                    lastFoundAuthPath = authPath
+                    cachedAuth = auth
+                    cacheTimestamp = Date()
+                    logger.info("Successfully loaded OpenCode auth from: \(authPath.path)")
+                    return auth
+                } catch {
+                    logger.warning("Failed to parse auth at \(authPath.path): \(error.localizedDescription)")
+                    continue
+                }
             }
+            
+            lastFoundAuthPath = nil
+            cachedAuth = nil
+            cacheTimestamp = nil
+            logger.error("No valid auth.json found in any location")
+            return nil
         }
-
-        lastFoundAuthPath = nil
-        logger.error("No valid auth.json found in any location. Searched: \(paths.map { $0.path }.joined(separator: ", "))")
-        return nil
     }
 
     // MARK: - Antigravity Accounts File Reading
 
-    /// Reads Antigravity accounts from ~/.config/opencode/antigravity-accounts.json
-    /// - Returns: AntigravityAccounts structure if file exists and is valid, nil otherwise
+    /// Thread-safe read of Antigravity accounts with caching
     func readAntigravityAccounts() -> AntigravityAccounts? {
-        let fileManager = FileManager.default
-        let homeDir = fileManager.homeDirectoryForCurrentUser
-        let accountsPath = homeDir
-            .appendingPathComponent(".config")
-            .appendingPathComponent("opencode")
-            .appendingPathComponent("antigravity-accounts.json")
-
-        guard fileManager.fileExists(atPath: accountsPath.path) else {
-            logger.debug("Antigravity accounts file not found at: \(accountsPath.path)")
-            return nil
-        }
-
-        do {
-            let data = try Data(contentsOf: accountsPath)
-            let accounts = try JSONDecoder().decode(AntigravityAccounts.self, from: data)
-            logger.info("Successfully loaded Antigravity accounts")
-            return accounts
-        } catch {
-            logger.error("Failed to read Antigravity accounts: \(error.localizedDescription)")
-            return nil
+        return queue.sync {
+            if let cached = cachedAntigravityAccounts,
+               let timestamp = antigravityCacheTimestamp,
+               Date().timeIntervalSince(timestamp) < cacheValiditySeconds {
+                return cached
+            }
+            
+            let fileManager = FileManager.default
+            let homeDir = fileManager.homeDirectoryForCurrentUser
+            let accountsPath = homeDir
+                .appendingPathComponent(".config")
+                .appendingPathComponent("opencode")
+                .appendingPathComponent("antigravity-accounts.json")
+            
+            guard fileManager.fileExists(atPath: accountsPath.path) else {
+                return nil
+            }
+            
+            do {
+                let data = try Data(contentsOf: accountsPath)
+                let accounts = try JSONDecoder().decode(AntigravityAccounts.self, from: data)
+                cachedAntigravityAccounts = accounts
+                antigravityCacheTimestamp = Date()
+                logger.info("Successfully loaded Antigravity accounts")
+                return accounts
+            } catch {
+                logger.error("Failed to read Antigravity accounts: \(error.localizedDescription)")
+                return nil
+            }
         }
     }
 
@@ -401,6 +431,118 @@ final class TokenManager {
     }
 
     // MARK: - Debug Environment Info
+
+    /// Returns debug environment info as a string for error dialogs
+    func getDebugEnvironmentInfo() -> String {
+        let fileManager = FileManager.default
+        let homeDir = fileManager.homeDirectoryForCurrentUser
+
+        var debugLines: [String] = []
+        debugLines.append("Environment Info:")
+        debugLines.append(String(repeating: "─", count: 40))
+
+        // 0. XDG_DATA_HOME environment variable
+        if let xdgDataHome = ProcessInfo.processInfo.environment["XDG_DATA_HOME"], !xdgDataHome.isEmpty {
+            debugLines.append("[XDG_DATA_HOME] SET: \(xdgDataHome)")
+        } else {
+            debugLines.append("[XDG_DATA_HOME] NOT SET (using default ~/.local/share)")
+        }
+
+        // 1. Check all possible auth.json paths (fallback order)
+        debugLines.append("")
+        debugLines.append("Auth File Search:")
+        let authPaths = getAuthFilePaths()
+        var foundAuthPath: URL?
+
+        for (index, authPath) in authPaths.enumerated() {
+            let priority = index + 1
+            let pathLabel: String
+            switch index {
+            case 0 where ProcessInfo.processInfo.environment["XDG_DATA_HOME"] != nil:
+                pathLabel = "$XDG_DATA_HOME/opencode"
+            case 0, 1:
+                pathLabel = "~/.local/share/opencode"
+            default:
+                pathLabel = "~/Library/Application Support/opencode"
+            }
+
+            if fileManager.fileExists(atPath: authPath.path) {
+                if let content = try? String(contentsOf: authPath, encoding: .utf8) {
+                    let lineCount = content.components(separatedBy: .newlines).count
+                    let byteCount = content.utf8.count
+                    let marker = foundAuthPath == nil ? "ACTIVE" : "SHADOWED"
+                    debugLines.append("  [\(priority)] [\(marker)] \(pathLabel)/auth.json")
+                    debugLines.append("      Path: \(authPath.path)")
+                    debugLines.append("      Lines: \(lineCount), Bytes: \(byteCount)")
+                    if foundAuthPath == nil {
+                        foundAuthPath = authPath
+                    }
+                } else {
+                    debugLines.append("  [\(priority)] [UNREADABLE] \(pathLabel)/auth.json")
+                    debugLines.append("      Path: \(authPath.path)")
+                }
+            } else {
+                debugLines.append("  [\(priority)] [NOT FOUND] \(pathLabel)/auth.json")
+                debugLines.append("      Path: \(authPath.path)")
+            }
+        }
+
+        if let activePath = foundAuthPath {
+            debugLines.append("  [Result] Using: \(activePath.path)")
+        } else {
+            debugLines.append("  [Result] NO VALID auth.json FOUND")
+        }
+
+        // 2. Check ~/.config/opencode directory (antigravity-accounts.json)
+        debugLines.append("")
+        debugLines.append("Config Directory (~/.config/opencode):")
+        let configDir = homeDir
+            .appendingPathComponent(".config")
+            .appendingPathComponent("opencode")
+
+        if fileManager.fileExists(atPath: configDir.path) {
+            if let contents = try? fileManager.contentsOfDirectory(atPath: configDir.path) {
+                debugLines.append("  [EXISTS] \(contents.count) item(s)")
+                for item in contents.sorted() {
+                    var isDir: ObjCBool = false
+                    let itemPath = configDir.appendingPathComponent(item).path
+                    fileManager.fileExists(atPath: itemPath, isDirectory: &isDir)
+                    let typeIndicator = isDir.boolValue ? "[DIR]" : "[FILE]"
+                    debugLines.append("    \(typeIndicator) \(item)")
+                }
+            } else {
+                debugLines.append("  [UNREADABLE] Unable to list contents (permission denied or error)")
+            }
+        } else {
+            debugLines.append("  [NOT FOUND]")
+        }
+
+        // 3. Token availability summary (without revealing actual tokens)
+        debugLines.append("")
+        debugLines.append("Token Status:")
+        if let auth = readOpenCodeAuth() {
+            debugLines.append("  [Anthropic] \(auth.anthropic != nil ? "CONFIGURED" : "NOT CONFIGURED")")
+            debugLines.append("  [OpenAI] \(auth.openai != nil ? "CONFIGURED" : "NOT CONFIGURED")")
+            debugLines.append("  [GitHub Copilot] \(auth.githubCopilot != nil ? "CONFIGURED" : "NOT CONFIGURED")")
+            debugLines.append("  [OpenRouter] \(auth.openrouter != nil ? "CONFIGURED" : "NOT CONFIGURED")")
+            debugLines.append("  [OpenCode] \(auth.opencode != nil ? "CONFIGURED" : "NOT CONFIGURED")")
+            debugLines.append("  [Kimi] \(auth.kimiForCoding != nil ? "CONFIGURED" : "NOT CONFIGURED")")
+        } else {
+            debugLines.append("  [auth.json] PARSE FAILED or NOT FOUND")
+        }
+
+        // 4. Antigravity accounts
+        if let accounts = readAntigravityAccounts() {
+            let invalidMarker = accounts.activeIndex < 0 || accounts.activeIndex >= accounts.accounts.count ? " (INVALID)" : ""
+            debugLines.append("  [Antigravity] \(accounts.accounts.count) account(s), active index: \(accounts.activeIndex)\(invalidMarker)")
+        } else {
+            debugLines.append("  [Antigravity] NOT CONFIGURED")
+        }
+
+        debugLines.append(String(repeating: "─", count: 40))
+
+        return debugLines.joined(separator: "\n")
+    }
 
     func logDebugEnvironmentInfo() {
         let fileManager = FileManager.default
