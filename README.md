@@ -109,17 +109,20 @@ OpenCode Bar includes a powerful CLI for querying provider usage programmaticall
 #### Installation
 
 ```bash
-# Install CLI to /usr/local/bin
+# Option 1: Install via menu bar app
+# Click "Install CLI" from the Settings menu
+
+# Option 2: Manual installation
 bash scripts/install-cli.sh
 
 # Verify installation
 opencodebar --help
 ```
 
-#### Basic Commands
+#### Commands
 
 ```bash
-# Show all providers and their usage
+# Show all providers and their usage (default command)
 opencodebar status
 
 # List all available providers
@@ -127,34 +130,72 @@ opencodebar list
 
 # Get detailed info for a specific provider
 opencodebar provider claude
-opencodebar provider openrouter
+opencodebar provider gemini_cli
 
 # Output as JSON (for scripting)
-opencodebar status --format json
-opencodebar provider openrouter --format json
+opencodebar status --json
+opencodebar provider claude --json
+opencodebar list --json
+```
+
+#### Table Output Example
+
+```bash
+$ opencodebar status
+Provider              Type             Usage       Key Metrics
+─────────────────────────────────────────────────────────────────────────────────
+Claude                Quota-based      77%         23/100 remaining
+Codex                 Quota-based      0%          100/100 remaining
+Gemini (#1)           Quota-based      0%          100% remaining (user1@gmail.com)
+Gemini (#2)           Quota-based      15%         85% remaining (user2@company.com)
+Kimi for Coding       Quota-based      26%         74/100 remaining
+OpenCode Zen          Pay-as-you-go    -           $12.50 spent
+OpenRouter            Pay-as-you-go    -           $37.42 spent
 ```
 
 #### JSON Output Example
 
 ```bash
-$ opencodebar status --format json
+$ opencodebar status --json
 {
-  "providers": [
-    {
-      "id": "claude",
-      "name": "Claude",
-      "type": "quota",
-      "usage_percent": 60,
-      "remaining_percent": 40
-    },
-    {
-      "id": "openrouter",
-      "name": "OpenRouter",
-      "type": "pay_as_you_go",
-      "balance": 37.42,
-      "daily_cost": 2.15
-    }
-  ]
+  "claude": {
+    "type": "quota-based",
+    "remaining": 23,
+    "entitlement": 100,
+    "usagePercentage": 77,
+    "overagePermitted": false
+  },
+  "gemini_cli": {
+    "type": "quota-based",
+    "remaining": 85,
+    "entitlement": 100,
+    "usagePercentage": 15,
+    "overagePermitted": false,
+    "accounts": [
+      {
+        "index": 0,
+        "email": "user1@gmail.com",
+        "remainingPercentage": 100,
+        "modelBreakdown": {
+          "gemini-2.5-pro": 100,
+          "gemini-2.5-flash": 100
+        }
+      },
+      {
+        "index": 1,
+        "email": "user2@company.com",
+        "remainingPercentage": 85,
+        "modelBreakdown": {
+          "gemini-2.5-pro": 85,
+          "gemini-2.5-flash": 90
+        }
+      }
+    ]
+  },
+  "open_router": {
+    "type": "pay-as-you-go",
+    "cost": 37.42
+  }
 }
 ```
 
@@ -164,6 +205,16 @@ $ opencodebar status --format json
 - **Automation**: Build scripts that respond to quota thresholds
 - **CI/CD**: Check provider quotas before running expensive operations
 - **Reporting**: Generate usage reports for billing and analysis
+
+#### Exit Codes
+
+| Code | Meaning |
+|------|---------|
+| 0 | Success |
+| 1 | General error |
+| 2 | Authentication failed |
+| 3 | Network error |
+| 4 | Invalid arguments |
 
 ### Menu Structure
 
