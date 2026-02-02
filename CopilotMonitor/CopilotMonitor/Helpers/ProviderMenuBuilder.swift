@@ -445,7 +445,7 @@ extension StatusBarController {
             )
             item.target = self
             item.representedObject = SubscriptionMenuAction(subscriptionKey: subscriptionKey, plan: .preset(preset.name, preset.cost))
-            if case .preset(let currentName, _) = currentPlan, currentName == preset.name {
+            if case .preset(_, let currentCost) = currentPlan, currentCost == preset.cost {
                 item.state = .on
             }
             submenu.addItem(item)
