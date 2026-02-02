@@ -37,6 +37,7 @@
 | **Codex** | Quota-based | Primary/Secondary quotas, plan type |
 | **Gemini CLI** | Quota-based | Per-model quotas, multi-account support |
 | **Kimi for Coding (Kimi K2.5)** | Quota-based | Usage limits, membership level, reset time |
+| **Z.AI Coding Plan** | Quota-based | Token/MCP quotas, model usage, tool usage (24h) |
 | **Antigravity** | Quota-based | Local language server monitoring |
 | **GitHub Copilot** | Quota-based | Daily history, overage tracking |
 
@@ -233,6 +234,7 @@ Quota Status: $219/m
   Copilot          0%        ▸
   Claude           60%       ▸
   Codex            100%      ▸
+  Z.AI Coding Plan 99%       ▸
   Gemini CLI (#1)  100%      ▸
 ─────────────────────────────
 Predicted EOM: $451

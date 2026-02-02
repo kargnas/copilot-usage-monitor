@@ -288,6 +288,12 @@ func buildProviderSubmenu() -> [NSMenuItem] {
        - Solution: Create explicit display order array or use sorted keys when iterating
        - Example: `let providerDisplayOrder = ["opencode_zen", "gemini_cli", "claude", "openrouter", "antigravity"]`
        - Pattern: Define display order independently of data source to maintain consistent UI
+   - **Z.AI API Date Format**:
+       - Parameter Validation Error: Z.AI API returns 500 error when using milliseconds timestamp for `startTime`/`endTime`
+       - Requirement: API explicitly requires `yyyy-MM-dd HH:mm:ss` format string
+       - Fix: Use `DateFormatter` with `UTC` timezone instead of `Int64` timestamps
+       - Pattern: Always verify API time format requirements (timestamp vs ISO8601 vs custom string)
+       - Example: `dateFormatter.dateFormat = "yyyy-MM-dd HH:mm:ss"`
      - **Menu Item Reference Deadlock**:
         - Shared NSMenuItem Reference: Referencing the same NSMenuItem instance (like `predictionPeriodMenu`) from multiple submenus can cause deadlocks
         - Manifestation: Menu becomes unresponsive or hangs when clicking on submenu items
