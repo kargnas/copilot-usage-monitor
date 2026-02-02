@@ -671,10 +671,7 @@ final class StatusBarController: NSObject {
               let remaining = limit - used
               let percentage = limit > 0 ? (Double(remaining) / Double(limit)) * 100 : 0
 
-              var titleParts = ["Copilot"]
-              if let planName = copilotUsage.planDisplayName {
-                  titleParts.append("(\(planName))")
-              }
+              var titleParts = [ProviderIdentifier.copilot.displayName]
               titleParts.append(String(format: "%.0f%% remaining", percentage))
 
               let quotaItem = NSMenuItem(

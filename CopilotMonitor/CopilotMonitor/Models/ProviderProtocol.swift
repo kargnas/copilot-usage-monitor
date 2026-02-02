@@ -24,11 +24,11 @@ enum ProviderIdentifier: String, CaseIterable {
     var displayName: String {
         switch self {
         case .copilot:
-            return "Copilot"
+            return "GitHub Copilot"
         case .claude:
             return "Claude"
         case .codex:
-            return "Codex"
+            return "ChatGPT Codex"
         case .geminiCLI:
             return "Gemini CLI"
         case .openRouter:
