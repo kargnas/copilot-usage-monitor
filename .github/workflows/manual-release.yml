@@ -122,6 +122,50 @@ jobs:
           echo "Copied app bundle from archive"
           ls -la "$RUNNER_TEMP/export/"
       
+      - name: Re-sign App Bundle for Notarization
+        run: |
+          APP_PATH="$RUNNER_TEMP/export/OpenCode Bar.app"
+          
+          echo "Re-signing embedded frameworks and binaries with Developer ID..."
+          
+          # Sign all executables in frameworks (deepest level first)
+          # This includes Sparkle's Autoupdate, Updater.app, Downloader.xpc, etc.
+          find "$APP_PATH/Contents/Frameworks" -type f -perm +111 | while read binary; do
+            echo "Signing: $binary"
+            codesign --force --sign "Developer ID Application" --timestamp --options runtime "$binary" 2>/dev/null || true
+          done
+          
+          # Sign XPC services
+          find "$APP_PATH/Contents/Frameworks" -name "*.xpc" | while read xpc; do
+            echo "Signing XPC: $xpc"
+            codesign --force --sign "Developer ID Application" --timestamp --options runtime "$xpc"
+          done
+          
+          # Sign helper apps inside frameworks  
+          find "$APP_PATH/Contents/Frameworks" -name "*.app" | while read app; do
+            echo "Signing helper app: $app"
+            codesign --force --sign "Developer ID Application" --timestamp --options runtime "$app"
+          done
+          
+          # Sign frameworks
+          find "$APP_PATH/Contents/Frameworks" -name "*.framework" | while read framework; do
+            echo "Signing framework: $framework"
+            codesign --force --sign "Developer ID Application" --timestamp --options runtime "$framework"
+          done
+          
+          # Sign CLI binary if present
+          if [ -f "$APP_PATH/Contents/MacOS/opencodebar-cli" ]; then
+            echo "Signing CLI binary..."
+            codesign --force --sign "Developer ID Application" --timestamp --options runtime \
+              "$APP_PATH/Contents/MacOS/opencodebar-cli"
+          fi
+          
+          # Finally re-sign the main app bundle
+          echo "Re-signing main app bundle..."
+          codesign --force --sign "Developer ID Application" --timestamp --options runtime "$APP_PATH"
+          
+          echo "✅ Re-signing completed"
+      
       - name: Verify Code Signing
         run: |
           echo "Verifying code signature..."
