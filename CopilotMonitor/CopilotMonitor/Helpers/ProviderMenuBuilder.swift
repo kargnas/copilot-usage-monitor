@@ -467,6 +467,8 @@ extension StatusBarController {
                 )
                 submenu.addItem(item)
             }
+
+            addSubscriptionItems(to: submenu, provider: .synthetic)
             return submenu
 
         default:

@@ -140,6 +140,11 @@ struct ProviderSubscriptionPresets {
         SubscriptionPreset(name: "Max", cost: 60)
     ]
 
+    static let synthetic: [SubscriptionPreset] = [
+        SubscriptionPreset(name: "Standard", cost: 20),
+        SubscriptionPreset(name: "Pro", cost: 60)
+    ]
+
     static let openRouter: [SubscriptionPreset] = []
     static let openCode: [SubscriptionPreset] = []
     static let openCodeZen: [SubscriptionPreset] = []
@@ -167,7 +172,7 @@ struct ProviderSubscriptionPresets {
         case .zaiCodingPlan:
             return zaiCodingPlan
         case .synthetic:
-            return []
+            return synthetic
         }
     }
 }
