@@ -105,6 +105,72 @@ extension StatusBarController {
             historyItem.submenu = historySubmenu
             submenu.addItem(historyItem)
 
+        case .copilot:
+            // === Usage ===
+            if let used = details.copilotUsedRequests, let limit = details.copilotLimitRequests, limit > 0 {
+                let filledBlocks = Int((Double(used) / Double(max(limit, 1))) * 10)
+                let emptyBlocks = 10 - filledBlocks
+                let progressBar = String(repeating: "═", count: filledBlocks) + String(repeating: "░", count: emptyBlocks)
+                let progressItem = NSMenuItem()
+                progressItem.view = createDisabledLabelView(text: "[\(progressBar)] \(used)/\(limit)")
+                submenu.addItem(progressItem)
+
+                let usagePercent = (Double(used) / Double(limit)) * 100
+                let items = createUsageWindowRow(label: "Monthly", usagePercent: usagePercent, resetDate: details.copilotQuotaResetDateUTC, isMonthly: true)
+                items.forEach { submenu.addItem($0) }
+            }
+
+            // === Plan & Quota ===
+            submenu.addItem(NSMenuItem.separator())
+
+            if let planType = details.planType {
+                // Replicate CopilotUsage.planDisplayName logic since DetailedUsage stores raw plan string
+                let planName: String
+                switch planType.lowercased() {
+                case "individual_pro": planName = "Pro"
+                case "individual_free": planName = "Free"
+                case "business": planName = "Business"
+                case "enterprise": planName = "Enterprise"
+                default: planName = planType.replacingOccurrences(of: "_", with: " ").capitalized
+                }
+                let planItem = NSMenuItem()
+                planItem.view = createDisabledLabelView(
+                    text: "Plan: \(planName)",
+                    icon: NSImage(systemSymbolName: "crown", accessibilityDescription: "Plan")
+                )
+                submenu.addItem(planItem)
+            }
+
+            if let limit = details.copilotLimitRequests {
+                let freeItem = NSMenuItem()
+                freeItem.view = createDisabledLabelView(text: "Quota Limit: \(limit)")
+                submenu.addItem(freeItem)
+            }
+
+            // === Account Info ===
+            submenu.addItem(NSMenuItem.separator())
+
+            if let email = details.email {
+                let emailItem = NSMenuItem()
+                emailItem.view = createDisabledLabelView(
+                    text: "Email: \(email)",
+                    icon: NSImage(systemSymbolName: "person.circle", accessibilityDescription: "User Email"),
+                    multiline: false
+                )
+                submenu.addItem(emailItem)
+            }
+
+            let authItem = NSMenuItem()
+            authItem.view = createDisabledLabelView(
+                text: "Token From: Browser Cookies (Chrome/Brave/Arc/Edge)",
+                icon: NSImage(systemSymbolName: "key", accessibilityDescription: "Auth Source"),
+                multiline: true
+            )
+            submenu.addItem(authItem)
+
+            // === Subscription ===
+            addSubscriptionItems(to: submenu, provider: .copilot)
+
         case .claude:
             // === Usage Windows ===
             if let fiveHour = details.fiveHourUsage {
