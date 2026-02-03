@@ -5,7 +5,7 @@ final class SyntheticProviderTests: XCTestCase {
     private final class MockURLProtocol: URLProtocol {
         static var requestHandler: ((URLRequest) throws -> (HTTPURLResponse, Data))?
 
-        override class func canInit(with request: URLRequest) -> Bool {
+        override static func canInit(with request: URLRequest) -> Bool {
             return true
         }
 
