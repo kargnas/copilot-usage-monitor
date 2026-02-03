@@ -868,4 +868,132 @@ extension StatusBarController {
 
         return view
     }
+
+    // MARK: - Shared UI Helpers for Unified Provider Menus
+
+    /// Creates unified usage window display with optional reset time and pace indicator.
+    /// Returns array of NSMenuItems: [usage row, reset row (optional), pace row (optional)]
+    func createUsageWindowRow(
+        label: String,
+        usagePercent: Double,
+        resetDate: Date? = nil,
+        windowHours: Int? = nil,
+        isMonthly: Bool = false
+    ) -> [NSMenuItem] {
+        var items: [NSMenuItem] = []
+
+        let usageItem = NSMenuItem()
+        usageItem.view = createDisabledLabelView(text: String(format: "%@: %.0f%% used", label, usagePercent))
+        items.append(usageItem)
+
+        if let resetDate = resetDate {
+            let formatter = DateFormatter()
+            formatter.dateFormat = "yyyy-MM-dd HH:mm zzz"
+            formatter.timeZone = TimeZone.current
+            let resetItem = NSMenuItem()
+            resetItem.view = createDisabledLabelView(text: "Resets: \(formatter.string(from: resetDate))", indent: 18)
+            items.append(resetItem)
+
+            let paceInfo: PaceInfo
+            if isMonthly {
+                paceInfo = calculateMonthlyPace(usagePercent: usagePercent, resetDate: resetDate)
+            } else if let windowHours = windowHours {
+                paceInfo = calculatePace(usage: usagePercent, resetTime: resetDate, windowHours: windowHours)
+            } else {
+                return items
+            }
+
+            let paceItem = NSMenuItem()
+            paceItem.view = createPaceView(paceInfo: paceInfo)
+            items.append(paceItem)
+        }
+
+        return items
+    }
+
+    /// Creates a "used/total" display row with optional unit prefix.
+    /// Example: "Tokens: 12,345 / 100,000", "Credits: $3.50 / $10.00"
+    func createLimitRow(label: String, used: Double, total: Double, unitPrefix: String = "") -> NSMenuItem {
+        let numberFormatter = NumberFormatter()
+        numberFormatter.numberStyle = .decimal
+        numberFormatter.maximumFractionDigits = 0
+
+        let formattedUsed = numberFormatter.string(from: NSNumber(value: used)) ?? "\(Int(used))"
+        let formattedTotal = numberFormatter.string(from: NSNumber(value: total)) ?? "\(Int(total))"
+
+        let item = NSMenuItem()
+        item.view = createDisabledLabelView(
+            text: "\(label): \(unitPrefix)\(formattedUsed) / \(unitPrefix)\(formattedTotal)"
+        )
+        return item
+    }
+
+    /// Creates unified account info section with SF Symbol icons.
+    /// Returns [separator, item1, item2, ...]. Enables multiline for "Token From:" items.
+    func createAccountInfoSection(items: [(sfSymbol: String, text: String)]) -> [NSMenuItem] {
+        var menuItems: [NSMenuItem] = []
+        menuItems.append(NSMenuItem.separator())
+
+        for item in items {
+            let menuItem = NSMenuItem()
+            let needsMultiline = item.text.hasPrefix("Token From:")
+            menuItem.view = createDisabledLabelView(
+                text: item.text,
+                icon: NSImage(systemSymbolName: item.sfSymbol, accessibilityDescription: nil),
+                multiline: needsMultiline
+            )
+            menuItems.append(menuItem)
+        }
+
+        return menuItems
+    }
+
+    /// Creates a custom NSView for quota provider titles with right-aligned percentage.
+    /// Layout: [icon 16x16] [name] .......... [XX% monospaced, right-aligned]
+    /// Uses .systemRed when usedPercent > 80 to warn about approaching quota limits.
+    func createQuotaTitleView(name: String, usedPercent: Double, icon: NSImage?) -> NSView {
+        let menuWidth = MenuDesignToken.Dimension.menuWidth
+        let itemHeight = MenuDesignToken.Dimension.itemHeight
+        let iconSize = MenuDesignToken.Dimension.iconSize
+
+        let view = NSView(frame: NSRect(x: 0, y: 0, width: menuWidth, height: itemHeight))
+
+        if let icon = icon {
+            let imageView = NSImageView()
+            imageView.image = icon
+            imageView.imageScaling = .scaleProportionallyUpOrDown
+            imageView.translatesAutoresizingMaskIntoConstraints = false
+            view.addSubview(imageView)
+            NSLayoutConstraint.activate([
+                imageView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: MenuDesignToken.Spacing.leadingOffset),
+                imageView.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+                imageView.widthAnchor.constraint(equalToConstant: iconSize),
+                imageView.heightAnchor.constraint(equalToConstant: iconSize)
+            ])
+        }
+
+        let nameLabel = NSTextField(labelWithString: name)
+        nameLabel.font = MenuDesignToken.Typography.defaultFont
+        nameLabel.textColor = .labelColor
+        nameLabel.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(nameLabel)
+        NSLayoutConstraint.activate([
+            nameLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: MenuDesignToken.Spacing.leadingWithIcon),
+            nameLabel.centerYAnchor.constraint(equalTo: view.centerYAnchor)
+        ])
+
+        let percentText = String(format: "%.0f%%", usedPercent)
+        let percentLabel = NSTextField(labelWithString: percentText)
+        percentLabel.font = MenuDesignToken.Typography.monospacedFont
+        percentLabel.textColor = usedPercent > 80 ? .systemRed : .secondaryLabelColor
+        percentLabel.alignment = .right
+        percentLabel.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(percentLabel)
+        NSLayoutConstraint.activate([
+            percentLabel.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -MenuDesignToken.Spacing.trailingMargin),
+            percentLabel.centerYAnchor.constraint(equalTo: view.centerYAnchor)
+        ])
+
+        return view
+    }
 }
