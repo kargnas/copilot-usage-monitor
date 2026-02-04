@@ -667,11 +667,18 @@ final class StatusBarController: NSObject {
             if let copilotResult = providerResults[.copilot],
                let accounts = copilotResult.accounts,
                !accounts.isEmpty {
+                let copilotAuthLabels = Set(
+                    accounts.map { account in
+                        authSourceLabel(for: account.details?.authSource, provider: .copilot) ?? "Unknown"
+                    }
+                )
+                let showCopilotAuthLabel = copilotAuthLabels.count > 1
                 let baseName = multiAccountBaseName(for: .copilot)
                 for account in accounts {
                     hasQuota = true
                     var displayName = accounts.count > 1 ? "\(baseName) #\(account.accountIndex + 1)" : baseName
-                    if accounts.count > 1, let sourceLabel = authSourceLabel(for: account.details?.authSource, provider: .copilot) {
+                    if accounts.count > 1, showCopilotAuthLabel {
+                        let sourceLabel = authSourceLabel(for: account.details?.authSource, provider: .copilot) ?? "Unknown"
                         displayName += " (\(sourceLabel))"
                     }
                     if (account.usage.totalEntitlement ?? 0) == 0 {
@@ -711,11 +718,18 @@ final class StatusBarController: NSObject {
 
                  if let result = providerResults[identifier] {
                      if let accounts = result.accounts, !accounts.isEmpty {
+                          let authLabels = Set(
+                              accounts.map { account in
+                                  authSourceLabel(for: account.details?.authSource, provider: identifier) ?? "Unknown"
+                              }
+                          )
+                          let showAuthLabel = authLabels.count > 1
                           let baseName = multiAccountBaseName(for: identifier)
                           for account in accounts {
                               hasQuota = true
                               var displayName = accounts.count > 1 ? "\(baseName) #\(account.accountIndex + 1)" : baseName
-                              if accounts.count > 1, let sourceLabel = authSourceLabel(for: account.details?.authSource, provider: identifier) {
+                              if accounts.count > 1, showAuthLabel {
+                                  let sourceLabel = authSourceLabel(for: account.details?.authSource, provider: identifier) ?? "Unknown"
                                   displayName += " (\(sourceLabel))"
                               }
                               if (account.usage.totalEntitlement ?? 0) == 0 {
@@ -767,6 +781,13 @@ final class StatusBarController: NSObject {
                    let geminiAccounts = details.geminiAccounts,
                    !geminiAccounts.isEmpty {
 
+                     let geminiAuthLabels = Set(
+                         geminiAccounts.map { account in
+                             authSourceLabel(for: account.authSource, provider: .geminiCLI) ?? "Unknown"
+                         }
+                     )
+                     let showGeminiAuthLabel = geminiAuthLabels.count > 1
+
                      for account in geminiAccounts {
                          hasQuota = true
                          let accountNumber = account.accountIndex + 1
@@ -774,7 +795,8 @@ final class StatusBarController: NSObject {
                          var displayName = geminiAccounts.count > 1
                               ? "Gemini CLI #\(accountNumber)"
                               : "Gemini CLI"
-                         if geminiAccounts.count > 1, let sourceLabel = authSourceLabel(for: account.authSource, provider: .geminiCLI) {
+                         if geminiAccounts.count > 1, showGeminiAuthLabel {
+                             let sourceLabel = authSourceLabel(for: account.authSource, provider: .geminiCLI) ?? "Unknown"
                              displayName += " (\(sourceLabel))"
                          }
                           let item = createNativeQuotaMenuItem(name: displayName, usedPercent: usedPercent, icon: iconForProvider(.geminiCLI))
