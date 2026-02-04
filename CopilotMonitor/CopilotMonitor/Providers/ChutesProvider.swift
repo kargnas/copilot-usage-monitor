@@ -94,8 +94,9 @@ final class ChutesProvider: ProviderProtocol {
         let quota = quotaItem.quota
         let used = usage.used
         let remaining = max(0, quota - used)
-        let usedPercentage = Int((Double(used) / Double(quota)) * 100)
-        let remainingPercentage = 100 - usedPercentage
+        // Guard against division by zero: treat 0 quota as 0% used
+        let usedPercentage = quota > 0 ? min(100, Int((Double(used) / Double(quota)) * 100)) : 0
+        let remainingPercentage = max(0, 100 - usedPercentage)
 
         let planTier = Self.getPlanTier(from: quota)
 

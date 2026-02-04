@@ -440,14 +440,8 @@ extension StatusBarController {
                 let percentage = total > 0 ? Int((Double(used) / Double(total)) * 100) : 0
 
                 let item = NSMenuItem()
-                item.view = createDisabledLabelView(text: String(format: "Daily: %d%% (%d/%d)", percentage, used, total))
+                item.view = createDisabledLabelView(text: String(format: "Daily: %d%% used (%d/%d)", percentage, used, total))
                 submenu.addItem(item)
-
-                if let resetPeriod = details.resetPeriod {
-                    let resetItem = NSMenuItem()
-                    resetItem.view = createDisabledLabelView(text: "Resets: \(resetPeriod)", indent: 18)
-                    submenu.addItem(resetItem)
-                }
             }
 
             submenu.addItem(NSMenuItem.separator())
@@ -981,7 +975,7 @@ extension StatusBarController {
             formatter.dateFormat = "yyyy-MM-dd HH:mm zzz"
             formatter.timeZone = TimeZone.current
             let resetItem = NSMenuItem()
-            resetItem.view = createDisabledLabelView(text: "Resets: \(formatter.string(from: resetDate))", indent: 18)
+            resetItem.view = createDisabledLabelView(text: "Resets: \(formatter.string(from: resetDate))", indent: MenuDesignToken.Spacing.submenuIndent)
             items.append(resetItem)
 
             let paceInfo: PaceInfo
