@@ -46,6 +46,10 @@ final class GeminiCLIProvider: ProviderProtocol {
             throw ProviderError.authenticationFailed("No Gemini accounts configured")
         }
 
+        if allAccounts.contains(where: { $0.source == .opencodeAuth }) {
+            logger.info("Gemini CLI: Using OpenCode auth.json fallback for Gemini OAuth")
+        }
+
         var candidates: [GeminiAccountCandidate] = []
 
         for account in allAccounts {
