@@ -165,7 +165,7 @@ struct CopilotPlanInfo {
     let userId: String?
 }
 
-/// Antigravity Accounts structure for ~/.config/opencode/antigravity-accounts.json
+/// Antigravity Accounts structure for NoeFabris/opencode-antigravity-auth (~/.config/opencode/antigravity-accounts.json)
 struct AntigravityAccounts: Codable {
     struct Account: Codable {
         let email: String
@@ -178,9 +178,11 @@ struct AntigravityAccounts: Codable {
     let activeIndex: Int
 }
 
-/// Auth source types for Gemini CLI fallback handling
+/// Auth source types for Gemini CLI token discovery
 enum GeminiAuthSource {
+    /// NoeFabris/opencode-antigravity-auth (~/.config/opencode/antigravity-accounts.json)
     case antigravity
+    /// jenslys/opencode-gemini-auth (OpenCode auth.json google.oauth)
     case opencodeAuth
 }
 
@@ -196,7 +198,7 @@ struct GeminiAuthAccount {
     let source: GeminiAuthSource
 }
 
-/// Minimal OpenCode auth payload for Gemini OAuth stored under "google"
+/// Minimal OpenCode auth payload for jenslys/opencode-gemini-auth stored under "google"
 struct OpenCodeGeminiAuthContainer: Decodable {
     let google: GeminiOAuthAuth?
 }
@@ -877,7 +879,7 @@ final class TokenManager: @unchecked Sendable {
         return accounts
     }
 
-    // MARK: - Gemini OAuth Auth File Reading (OpenCode auth.json)
+    // MARK: - Gemini OAuth Auth File Reading (jenslys/opencode-gemini-auth)
 
     private struct GeminiRefreshParts {
         let refreshToken: String
@@ -898,7 +900,7 @@ final class TokenManager: @unchecked Sendable {
         )
     }
 
-    /// Thread-safe read of Gemini OAuth auth stored under "google" in OpenCode auth.json
+    /// Thread-safe read of Gemini OAuth auth stored under "google" in OpenCode auth.json (jenslys/opencode-gemini-auth)
     func readGeminiOAuthAuth() -> GeminiOAuthAuth? {
         return queue.sync {
             if let cached = cachedGeminiOAuthAuth,
@@ -1141,19 +1143,19 @@ final class TokenManager: @unchecked Sendable {
         return auth.zaiCodingPlan?.key
     }
 
-    /// Gets Gemini refresh token from storage (primary: Antigravity accounts, fallback: OpenCode auth.json)
+    /// Gets Gemini refresh token from storage (NoeFabris/opencode-antigravity-auth first, then jenslys/opencode-gemini-auth)
     /// - Returns: Refresh token string if available, nil otherwise
     func getGeminiRefreshToken() -> String? {
         return getAllGeminiAccounts().first?.refreshToken
     }
 
-    /// Gets Gemini account email from storage (primary: Antigravity accounts, fallback: OpenCode auth.json)
+    /// Gets Gemini account email from storage (NoeFabris/opencode-antigravity-auth first, then jenslys/opencode-gemini-auth)
     /// - Returns: Email string if available, nil otherwise
     func getGeminiAccountEmail() -> String? {
         return getAllGeminiAccounts().first?.email
     }
 
-    /// Gets all Gemini accounts (primary: Antigravity accounts, fallback: OpenCode auth.json)
+    /// Gets all Gemini accounts (NoeFabris/opencode-antigravity-auth + jenslys/opencode-gemini-auth)
     func getAllGeminiAccounts() -> [GeminiAuthAccount] {
         var accounts: [GeminiAuthAccount] = []
 
@@ -1231,7 +1233,7 @@ final class TokenManager: @unchecked Sendable {
     private static let geminiClientId = "1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com"
     private static let geminiClientSecret = "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"
     
-    /// OAuth client used by opencode-gemini-auth plugin
+    /// OAuth client used by jenslys/opencode-gemini-auth plugin
     private static let geminiAuthPluginClientId = "681255809395-oo8ft2oprdrnp9e3aqf6av3hmdib135j.apps.googleusercontent.com"
     private static let geminiAuthPluginClientSecret = "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"
 
@@ -1433,14 +1435,14 @@ final class TokenManager: @unchecked Sendable {
         let geminiAuth = readGeminiOAuthAuth()
         let geminiAuthPath = lastFoundGeminiOAuthPath?.path ?? "auth.json"
         if let geminiAuth = geminiAuth, let refresh = geminiAuth.refresh, !refresh.isEmpty {
-            lines.append("  OpenCode auth.json (google.oauth, \(shortPath(geminiAuthPath))): FOUND")
+            lines.append("  OpenCode auth.json (google.oauth, jenslys/opencode-gemini-auth, \(shortPath(geminiAuthPath))): FOUND")
         } else {
-            lines.append("  OpenCode auth.json (google.oauth, \(shortPath(geminiAuthPath))): NOT FOUND")
+            lines.append("  OpenCode auth.json (google.oauth, jenslys/opencode-gemini-auth, \(shortPath(geminiAuthPath))): NOT FOUND")
         }
         if let accounts = readAntigravityAccounts() {
-            lines.append("  Antigravity accounts (\(shortPath(antigravityAccountsPath().path))): FOUND (\(accounts.accounts.count) account(s))")
+            lines.append("  Antigravity accounts (NoeFabris/opencode-antigravity-auth, \(shortPath(antigravityAccountsPath().path))): FOUND (\(accounts.accounts.count) account(s))")
         } else {
-            lines.append("  Antigravity accounts (\(shortPath(antigravityAccountsPath().path))): NOT FOUND")
+            lines.append("  Antigravity accounts (NoeFabris/opencode-antigravity-auth, \(shortPath(antigravityAccountsPath().path))): NOT FOUND")
         }
 
         lines.append(String(repeating: "─", count: 40))

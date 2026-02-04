@@ -57,8 +57,8 @@ Download the latest `.dmg` file from the [**Releases**](https://github.com/opggi
 ### Custom Providers
 
 - **Antigravity/Gemini**
-  - `NoeFabris/opencode-antigravity-auth`
-  - `jenslys/opencode-gemini-auth`
+  - `NoeFabris/opencode-antigravity-auth` (writes `~/.config/opencode/antigravity-accounts.json`)
+  - `jenslys/opencode-gemini-auth` (writes `google.oauth` in OpenCode `auth.json`)
 - **Claude**: `anomalyco/opencode-anthropic-auth`
 
 ## Features

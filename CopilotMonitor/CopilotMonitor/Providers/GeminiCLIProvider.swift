@@ -23,7 +23,8 @@ struct GeminiUserInfoResponse: Codable {
 // MARK: - GeminiCLIProvider Implementation
 
 /// Provider for Google Gemini CLI quota tracking via cloudcode-pa.googleapis.com
-/// Uses OAuth token refresh from antigravity-accounts.json with fallback to OpenCode auth.json
+/// Uses OAuth token refresh from NoeFabris/opencode-antigravity-auth (antigravity-accounts.json)
+/// and jenslys/opencode-gemini-auth (OpenCode auth.json google.oauth).
 final class GeminiCLIProvider: ProviderProtocol {
     let identifier: ProviderIdentifier = .geminiCLI
     let type: ProviderType = .quotaBased
@@ -47,7 +48,7 @@ final class GeminiCLIProvider: ProviderProtocol {
         }
 
         if allAccounts.contains(where: { $0.source == .opencodeAuth }) {
-            logger.info("Gemini CLI: Using OpenCode auth.json fallback for Gemini OAuth")
+            logger.info("Gemini CLI: Using jenslys/opencode-gemini-auth (OpenCode auth.json google.oauth)")
         }
 
         var candidates: [GeminiAccountCandidate] = []
