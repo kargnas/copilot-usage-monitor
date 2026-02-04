@@ -576,6 +576,10 @@ final class StatusBarController: NSObject {
                 if !providerResults.keys.contains(provider) {
                     continue
                 }
+            } else {
+                // Unknown provider prefix - skip to avoid false orphan detection
+                // This handles corrupted keys or keys for future/unsupported providers
+                continue
             }
 
             let plan = SubscriptionSettingsManager.shared.getPlan(forKey: key)

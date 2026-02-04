@@ -80,7 +80,8 @@ final class CopilotProvider: ProviderProtocol {
 
                     saveCache(usage: usage)
 
-                    let remaining = usage.limitRequests - usage.usedRequests
+        // Clamp to 0 to avoid negative display when in overage (usedRequests > limitRequests)
+        let remaining = max(0, usage.limitRequests - usage.usedRequests)
                     logger.info("CopilotProvider: Fetch successful - used: \(usage.usedRequests), limit: \(usage.limitRequests), remaining: \(remaining)")
 
                     var dailyHistory: [DailyUsage]?
