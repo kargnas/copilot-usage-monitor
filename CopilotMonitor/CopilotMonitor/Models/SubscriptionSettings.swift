@@ -140,6 +140,12 @@ struct ProviderSubscriptionPresets {
         SubscriptionPreset(name: "Max", cost: 60)
     ]
 
+    static let chutes: [SubscriptionPreset] = [
+        SubscriptionPreset(name: "Base", cost: 3),
+        SubscriptionPreset(name: "Plus", cost: 10),
+        SubscriptionPreset(name: "Pro", cost: 20)
+    ]
+
     static let openRouter: [SubscriptionPreset] = []
     static let openCode: [SubscriptionPreset] = []
     static let openCodeZen: [SubscriptionPreset] = []
@@ -168,6 +174,8 @@ struct ProviderSubscriptionPresets {
             return zaiCodingPlan
         case .synthetic:
             return []
+        case .chutes:
+            return chutes
         }
     }
 }
@@ -213,6 +221,17 @@ final class SubscriptionSettingsManager {
     func setPlan(_ plan: SubscriptionPlan, for provider: ProviderIdentifier, accountId: String? = nil) {
         let key = subscriptionKey(for: provider, accountId: accountId)
         setPlan(plan, forKey: key)
+    }
+
+    func removePlan(forKey key: String) {
+        let fullKey = "\(userDefaultsKeyPrefix)\(key)"
+        UserDefaults.standard.removeObject(forKey: fullKey)
+    }
+
+    func removePlans(forKeys keys: [String]) {
+        for key in keys {
+            removePlan(forKey: key)
+        }
     }
 
     func getAllSubscriptionKeys() -> [String] {

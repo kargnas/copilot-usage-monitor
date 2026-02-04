@@ -461,13 +461,25 @@ func buildProviderSubmenu() -> [NSMenuItem] {
         - Use menu item references to update in-place instead of full rebuild
       - Performance Impact: 30 days × full rebuild = ~30x slower than necessary
       - Pattern: `updateLoadingProgress(dayIndex)` → update single loading item → `updateMenu()` only on completion
-    - **Debug Log Frequency Control**:
+   - **Debug Log Frequency Control**:
        - Excessive Logging: `logMenuStructure()` called on every menu update produces massive log output
        - Symptom: Logs show repeated identical menu structures hundreds of times during progressive loading
        - Solution: Use debug guards or log level controls for verbose structure logging
        - Pattern: `#if DEBUG logMenuStructure()` or move to trace-level logging instead of debug
        - Recommendation: Disable structure logging after initial validation, enable only when debugging menu issues
-     - **Silent Error Handling for Non-Critical Operations**:
+   - **Pace Row Overlap Prevention**:
+       - Overlap Risk: Left and right labels can collide when the right-side status text grows long
+       - Solution: Use Auto Layout with compression resistance priorities and right-aligned constraints
+       - Pattern: Left label `.defaultLow`, right label `.required`, and `lessThanOrEqualTo` spacing
+   - **Used-Up Pace Label Suppression**:
+       - Clarity Issue: Showing "Pace: Used Up" alongside wait text is redundant and noisy
+       - Solution: Hide the pace label entirely when usage is exhausted
+       - Pattern: `leftTextField.isHidden = true` when `isExhausted` is true
+   - **Wait Time Formatting Rules**:
+       - Consistency Need: Different wait durations should display with predictable granularity
+       - Rule: Show `Xd Yh` for 1d+, `Xh` for 1h+, and `Xm` for under 1h
+       - Pattern: Centralize in a single formatter function for all used-up messages
+   - **Silent Error Handling for Non-Critical Operations**:
         - Empty Catch Blocks: Use `catch {}` for operations where failure doesn't impact core functionality
         - Appropriate Use Cases: Optional config file reading, CLI binary detection, environment discovery
         - Safety Consideration: Only use when operation is truly non-critical and has fallback behavior
@@ -574,15 +586,30 @@ func buildProviderSubmenu() -> [NSMenuItem] {
          - Fix: Update test models to match actual provider implementation (remaining/entitlement vs utilization/cost)
          - Pattern: Verify test models match provider type when fixing provider bugs
          - Validation: Check both assertions and expected field types (Int vs Double, optional vs required)
-    - **Code Signing Timestamp Service Retry**:
-       - Timestamp Service Failures: `codesign --timestamp` may fail due to external service unavailability in CI/CD
-       - Build Impact: Xcode archive and code signing operations fail when timestamp service is down
-       - Solution: Implement retry logic with exponential delays for both build and signing stages
-       - Retry Pattern:
-         - Build: Max 3 retries with 30s delay between attempts
-         - Signing: Max 3 retries with 10s delay between attempts
-         - Function: Create `sign_with_retry()` wrapper function for all codesign calls
-       - Example: GitHub Actions workflow uses for-loop with attempt counter and sleep delays
-       - Benefit: Improves CI/CD reliability when external timestamp services experience temporary outages
-
-   <!-- opencode:reflection:end -->
+     - **Code Signing Timestamp Service Retry**:
+        - Timestamp Service Failures: `codesign --timestamp` may fail due to external service unavailability in CI/CD
+        - Build Impact: Xcode archive and code signing operations fail when timestamp service is down
+        - Solution: Implement retry logic with exponential delays for both build and signing stages
+        - Retry Pattern:
+          - Build: Max 3 retries with 30s delay between attempts
+          - Signing: Max 3 retries with 10s delay between attempts
+          - Function: Create `sign_with_retry()` wrapper function for all codesign calls
+        - Example: GitHub Actions workflow uses for-loop with attempt counter and sleep delays
+        - Benefit: Improves CI/CD reliability when external timestamp services experience temporary outages
+    - **Common Deduplication Logic for Multi-Account Providers**:
+        - Code Duplication: Each provider had its own `dedupeCandidates` method with identical logic
+        - Maintenance Burden: Changes require updating 4+ provider files separately (Claude, Codex, Copilot, Gemini)
+        - Fix: Extract shared `CandidateDedupe.merge()` helper to `ProviderResult.swift`
+        - Generic Implementation: Use closures for `accountId`, `isSameUsage`, `priority` to make it type-agnostic
+        - Pattern: Replace private methods with shared generic helpers for cross-provider operations
+        - Example: All 4 providers now call `CandidateDedupe.merge()` instead of their own implementations
+    - **File Readability Check Before Access**:
+        - Silent Failures: Files exist but are not readable due to permissions cause runtime errors
+        - Missing Validation: `FileManager.fileExists()` only checks existence, not readability
+        - Fix: Add `isReadableFile(atPath:)` check before attempting to read file contents
+        - Safety Pattern: `guard fileManager.fileExists(atPath: path), guard fileManager.isReadableFile(atPath: path)`
+        - Warning Logging: Log warning when file is not readable for troubleshooting
+        - Implementation: Add check in `TokenManager.swift` for Gemini OAuth, Codex auth, Antigravity accounts
+        - Benefit: Prevents crashes and provides better error messages for permission issues
+ 
+    <!-- opencode:reflection:end -->

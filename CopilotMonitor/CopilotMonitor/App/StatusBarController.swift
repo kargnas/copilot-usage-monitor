@@ -64,6 +64,8 @@ final class StatusBarController: NSObject {
      private var enabledProvidersMenu: NSMenu!
      private var lastProviderErrors: [ProviderIdentifier: String] = [:]
      private var viewErrorDetailsItem: NSMenuItem!
+     private var orphanedSubscriptionKeys: [String] = []
+     private var orphanedSubscriptionTotal: Double = 0
 
     private var usagePredictor: UsagePredictor {
         UsagePredictor(weights: predictionPeriod.weights)
@@ -483,6 +485,123 @@ final class StatusBarController: NSObject {
         return payAsYouGo + subscriptions
     }
 
+    private func sanitizedSubscriptionKey(_ key: String) -> String {
+        let parts = key.split(separator: ".", maxSplits: 1)
+        if parts.count > 1 {
+            return "\(parts[0]).<redacted>"
+        }
+        return String(parts[0])
+    }
+
+    private func orphanedIcon() -> NSImage? {
+        let symbol = NSImage(systemSymbolName: "exclamationmark.triangle.fill", accessibilityDescription: "Orphaned")
+        let sizeConfig = NSImage.SymbolConfiguration(pointSize: MenuDesignToken.Dimension.iconSize, weight: .regular)
+        let colorConfig = NSImage.SymbolConfiguration(hierarchicalColor: NSColor.systemOrange)
+        let config = sizeConfig.applying(colorConfig)
+        let image = symbol?.withSymbolConfiguration(config)
+        image?.isTemplate = false
+        return image
+    }
+
+    private func italicMenuTitle(_ text: String) -> NSAttributedString {
+        let baseFont = MenuDesignToken.Typography.defaultFont
+        let italicFont = NSFontManager.shared.convert(baseFont, toHaveTrait: .italicFontMask)
+        return NSAttributedString(string: text, attributes: [.font: italicFont])
+    }
+
+    private func providerIdentifier(for subscriptionKey: String) -> ProviderIdentifier? {
+        let prefix = subscriptionKey.split(separator: ".", maxSplits: 1).first
+        guard let prefix else { return nil }
+        return ProviderIdentifier(rawValue: String(prefix))
+    }
+
+    private func collectVisibleSubscriptionKeys(providerResults: [ProviderIdentifier: ProviderResult]) -> Set<String> {
+        var keys = Set<String>()
+
+        for (identifier, result) in providerResults {
+            guard isProviderEnabled(identifier) else { continue }
+
+            if identifier == .geminiCLI,
+               let details = result.details,
+               let geminiAccounts = details.geminiAccounts,
+               !geminiAccounts.isEmpty {
+                for account in geminiAccounts {
+                    let key = SubscriptionSettingsManager.shared.subscriptionKey(for: .geminiCLI, accountId: account.email)
+                    keys.insert(key)
+                }
+                continue
+            }
+
+            if let accounts = result.accounts, !accounts.isEmpty {
+                for account in accounts {
+                    if let accountId = account.accountId, !accountId.isEmpty {
+                        keys.insert(SubscriptionSettingsManager.shared.subscriptionKey(for: identifier, accountId: accountId))
+                    } else {
+                        keys.insert(SubscriptionSettingsManager.shared.subscriptionKey(for: identifier))
+                    }
+                }
+            } else {
+                keys.insert(SubscriptionSettingsManager.shared.subscriptionKey(for: identifier))
+            }
+        }
+
+        return keys
+    }
+
+    private func calculateOrphanedSubscriptions(providerResults: [ProviderIdentifier: ProviderResult]) -> (keys: [String], total: Double) {
+        let visibleKeys = collectVisibleSubscriptionKeys(providerResults: providerResults)
+        let allKeys = SubscriptionSettingsManager.shared.getAllSubscriptionKeys()
+
+        var orphaned: [String] = []
+        var total = 0.0
+
+        for key in allKeys {
+            if visibleKeys.contains(key) {
+                continue
+            }
+            // Skip if provider is currently loading, disabled, or not visible in results
+            // This prevents false positives when:
+            // 1. Provider is disabled in settings
+            // 2. Network error caused fetch to fail (provider not in providerResults)
+            // 3. Provider is still loading
+            if let provider = providerIdentifier(for: key) {
+                if loadingProviders.contains(provider) {
+                    continue
+                }
+                if !isProviderEnabled(provider) {
+                    continue
+                }
+                // If provider is enabled but not in results, it likely failed to fetch
+                // Don't mark as orphaned in this case
+                if !providerResults.keys.contains(provider) {
+                    continue
+                }
+            } else {
+                // Unknown provider prefix - skip to avoid false orphan detection
+                // This handles corrupted keys or keys for future/unsupported providers
+                continue
+            }
+
+            let plan = SubscriptionSettingsManager.shared.getPlan(forKey: key)
+            if plan.cost <= 0 {
+                continue
+            }
+
+            orphaned.append(key)
+            total += plan.cost
+        }
+
+        if orphaned.isEmpty {
+            debugLog("Orphaned subscriptions: none")
+        } else {
+            let formattedTotal = String(format: "%.2f", total)
+            let sanitizedKeys = orphaned.map { sanitizedSubscriptionKey($0) }.joined(separator: ", ")
+            debugLog("Orphaned subscriptions detected: \(orphaned.count) key(s), total=$\(formattedTotal), keys=[\(sanitizedKeys)]")
+        }
+
+        return (orphaned, total)
+    }
+
       private func updateMultiProviderMenu() {
           debugLog("updateMultiProviderMenu: started")
           guard let separatorIndex = menu.items.firstIndex(where: { $0.isSeparatorItem }) else {
@@ -604,8 +723,8 @@ final class StatusBarController: NSObject {
                     if let email = details.email {
                         let emailItem = NSMenuItem()
                         emailItem.view = createDisabledLabelView(
-                            text: "Email: \(email)",
-                            icon: NSImage(systemSymbolName: "person.circle", accessibilityDescription: "User Email"),
+                            text: "Account: \(email)",
+                            icon: NSImage(systemSymbolName: "person.circle", accessibilityDescription: "User Account"),
                             multiline: false
                         )
                         submenu.addItem(emailItem)
@@ -664,178 +783,285 @@ final class StatusBarController: NSObject {
 
          var hasQuota = false
 
-          if let copilotUsage = currentUsage {
-              hasQuota = true
-              let limit = copilotUsage.userPremiumRequestEntitlement
-              let used = copilotUsage.usedRequests
-              let remaining = limit - used
-              let percentage = limit > 0 ? (Double(remaining) / Double(limit)) * 100 : 0
-
-              var titleParts = [ProviderIdentifier.copilot.displayName]
-              titleParts.append(String(format: "%.0f%% remaining", percentage))
-
-              let quotaItem = NSMenuItem(
-                  title: titleParts.joined(separator: " "),
-                  action: nil,
-                  keyEquivalent: ""
-              )
-              quotaItem.image = iconForProvider(.copilot)
-              if percentage < 20 {
-                  quotaItem.image = tintedImage(iconForProvider(.copilot), color: .systemRed)
-              }
-              quotaItem.tag = 999
-
-              let submenu = NSMenu()
-
-              let filledBlocks = Int((Double(used) / Double(max(limit, 1))) * 10)
-              let emptyBlocks = 10 - filledBlocks
-              let progressBar = String(repeating: "═", count: filledBlocks) + String(repeating: "░", count: emptyBlocks)
-              let progressItem = NSMenuItem()
-              progressItem.view = createDisabledLabelView(text: "[\(progressBar)] \(used)/\(limit)")
-              submenu.addItem(progressItem)
-
-              let usagePercent = limit > 0 ? (Double(used) / Double(limit)) * 100 : 0
-              let usedItem = NSMenuItem()
-              usedItem.view = createDisabledLabelView(text: String(format: "Monthly Usage: %.0f%%", usagePercent))
-              submenu.addItem(usedItem)
-
-              if let resetDate = copilotUsage.quotaResetDateUTC {
-                  let formatter = DateFormatter()
-                  formatter.dateFormat = "yyyy-MM-dd HH:mm"
-                  formatter.timeZone = TimeZone(identifier: "UTC") ?? TimeZone(secondsFromGMT: 0)!
-                  let resetItem = NSMenuItem()
-                  resetItem.view = createDisabledLabelView(text: "Resets: \(formatter.string(from: resetDate)) UTC", indent: 18)
-                  submenu.addItem(resetItem)
-
-                  let paceInfo = calculateMonthlyPace(usagePercent: usagePercent, resetDate: resetDate)
-                  let paceItem = NSMenuItem()
-                  paceItem.view = createPaceView(paceInfo: paceInfo)
-                  submenu.addItem(paceItem)
-              }
-
-              submenu.addItem(NSMenuItem.separator())
-
-              if let planName = copilotUsage.planDisplayName {
-                  let planItem = NSMenuItem()
-                  planItem.view = createDisabledLabelView(
-                      text: "Plan: \(planName)",
-                      icon: NSImage(systemSymbolName: "crown", accessibilityDescription: "Plan")
-                  )
-                  submenu.addItem(planItem)
-              }
-
-              let freeItem = NSMenuItem()
-              freeItem.view = createDisabledLabelView(text: "Quota Limit: \(limit)")
-              submenu.addItem(freeItem)
-
-              submenu.addItem(NSMenuItem.separator())
-
-              if let email = providerResults[.copilot]?.details?.email {
-                  let emailItem = NSMenuItem()
-                  emailItem.view = createDisabledLabelView(
-                      text: "Email: \(email)",
-                      icon: NSImage(systemSymbolName: "person.circle", accessibilityDescription: "User Email"),
-                      multiline: false
-                  )
-                  submenu.addItem(emailItem)
-              }
-
-              let authItem = NSMenuItem()
-              authItem.view = createDisabledLabelView(
-                  text: "Token From: Browser Cookies (Chrome/Brave/Arc/Edge)",
-                  icon: NSImage(systemSymbolName: "key", accessibilityDescription: "Auth Source"),
-                  multiline: true
-              )
-              submenu.addItem(authItem)
-
-              addSubscriptionItems(to: submenu, provider: .copilot)
-
-              quotaItem.submenu = submenu
-
-              menu.insertItem(quotaItem, at: insertIndex)
-              insertIndex += 1
-          }
-
-            let quotaOrder: [ProviderIdentifier] = [.claude, .kimi, .codex, .zaiCodingPlan, .antigravity, .synthetic]
-            for identifier in quotaOrder {
-                guard isProviderEnabled(identifier) else { continue }
-
-                if let result = providerResults[identifier] {
-                    if case .quotaBased(let remaining, let entitlement, _) = result.usage {
-                        hasQuota = true
-                        let percentage = entitlement > 0 ? (Double(remaining) / Double(entitlement)) * 100 : 0
-                        let item = createQuotaMenuItem(identifier: identifier, percentage: percentage)
-                        item.tag = 999
-
-                        if let details = result.details, details.hasAnyValue {
-                            item.submenu = createDetailSubmenu(details, identifier: identifier)
-                        }
-
-                        menu.insertItem(item, at: insertIndex)
-                        insertIndex += 1
+            if let copilotResult = providerResults[.copilot],
+               let accounts = copilotResult.accounts,
+               !accounts.isEmpty {
+                let copilotAuthLabels = Set(
+                    accounts.map { account in
+                        authSourceLabel(for: account.details?.authSource, provider: .copilot) ?? "Unknown"
                     }
-                 } else if let errorMessage = lastProviderErrors[identifier] {
-                      hasQuota = true
-                      let item = createErrorMenuItem(identifier: identifier, errorMessage: errorMessage)
-                      menu.insertItem(item, at: insertIndex)
-                      insertIndex += 1
-                 } else if loadingProviders.contains(identifier) {
-                      hasQuota = true
-                      let item = NSMenuItem(title: "\(identifier.displayName) (Loading...)", action: nil, keyEquivalent: "")
-                      item.image = iconForProvider(identifier)
-                      item.isEnabled = false
-                      item.tag = 999
-                      menu.insertItem(item, at: insertIndex)
-                      insertIndex += 1
-                  }
-             }
-
-            if isProviderEnabled(.geminiCLI) {
-                if let result = providerResults[.geminiCLI],
-                   let details = result.details,
-                   let geminiAccounts = details.geminiAccounts,
-                   !geminiAccounts.isEmpty {
-
-                    for account in geminiAccounts {
-                        hasQuota = true
-                        let accountNumber = account.accountIndex + 1
-                        let title = geminiAccounts.count > 1
-                            ? String(format: "Gemini CLI #%d (%.0f%% remaining)", accountNumber, account.remainingPercentage)
-                            : String(format: "Gemini CLI (%.0f%% remaining)", account.remainingPercentage)
-
-                        let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
-                        item.image = iconForProvider(.geminiCLI)
-                        if account.remainingPercentage < 20 {
-                            item.image = tintedImage(iconForProvider(.geminiCLI), color: .systemRed)
-                        }
-                        item.tag = 999
-
-                        item.submenu = createGeminiAccountSubmenu(account)
-
-                        menu.insertItem(item, at: insertIndex)
-                        insertIndex += 1
-                    }
-                } else if let errorMessage = lastProviderErrors[.geminiCLI] {
+                )
+                let showCopilotAuthLabel = copilotAuthLabels.count > 1
+                let baseName = multiAccountBaseName(for: .copilot)
+                for account in accounts {
                     hasQuota = true
-                    let item = createErrorMenuItem(identifier: .geminiCLI, errorMessage: errorMessage)
-                    menu.insertItem(item, at: insertIndex)
+                    var displayName = accounts.count > 1 ? "\(baseName) #\(account.accountIndex + 1)" : baseName
+                    if accounts.count > 1, showCopilotAuthLabel {
+                        let sourceLabel = authSourceLabel(for: account.details?.authSource, provider: .copilot) ?? "Unknown"
+                        displayName += " (\(sourceLabel))"
+                    }
+                    if (account.usage.totalEntitlement ?? 0) == 0 {
+                        displayName += " (No usage data)"
+                    }
+                    let usedPercent = account.usage.usagePercentage
+                    let quotaItem = createNativeQuotaMenuItem(
+                        name: displayName,
+                        usedPercent: usedPercent,
+                        icon: iconForProvider(.copilot)
+                    )
+                    quotaItem.tag = 999
+
+                    if let details = account.details, details.hasAnyValue {
+                        quotaItem.submenu = createDetailSubmenu(details, identifier: .copilot, accountId: account.accountId)
+                    }
+
+                    menu.insertItem(quotaItem, at: insertIndex)
                     insertIndex += 1
-                } else if loadingProviders.contains(.geminiCLI) {
+                }
+            } else if let copilotUsage = currentUsage {
+                hasQuota = true
+                let limit = copilotUsage.userPremiumRequestEntitlement
+                let used = copilotUsage.usedRequests
+                let usedPercent = limit > 0 ? (Double(used) / Double(limit)) * 100 : 0
+
+                let quotaItem = createNativeQuotaMenuItem(
+                    name: ProviderIdentifier.copilot.displayName,
+                    usedPercent: usedPercent,
+                    icon: iconForProvider(.copilot)
+                )
+                quotaItem.tag = 999
+
+                if let details = providerResults[.copilot]?.details, details.hasAnyValue {
+                    quotaItem.submenu = createDetailSubmenu(details, identifier: .copilot)
+                } else {
+                    let submenu = NSMenu()
+                    let filledBlocks = Int((Double(used) / Double(max(limit, 1))) * 10)
+                    let emptyBlocks = 10 - filledBlocks
+                    let progressBar = String(repeating: "═", count: filledBlocks) + String(repeating: "░", count: emptyBlocks)
+                    let progressItem = NSMenuItem()
+                    progressItem.view = createDisabledLabelView(text: "[\(progressBar)] \(used)/\(limit)")
+                    submenu.addItem(progressItem)
+
+                    let usagePercent = limit > 0 ? (Double(used) / Double(limit)) * 100 : 0
+                    let usedItem = NSMenuItem()
+                    usedItem.view = createDisabledLabelView(text: String(format: "Monthly Usage: %.0f%%", usagePercent))
+                    submenu.addItem(usedItem)
+
+                    if let resetDate = copilotUsage.quotaResetDateUTC {
+                        let formatter = DateFormatter()
+                        formatter.dateFormat = "yyyy-MM-dd HH:mm"
+                        formatter.timeZone = TimeZone(identifier: "UTC") ?? TimeZone(secondsFromGMT: 0)!
+                        let resetItem = NSMenuItem()
+                        resetItem.view = createDisabledLabelView(text: "Resets: \(formatter.string(from: resetDate)) UTC", indent: 18)
+                        submenu.addItem(resetItem)
+
+                        let paceInfo = calculateMonthlyPace(usagePercent: usagePercent, resetDate: resetDate)
+                        let paceItem = NSMenuItem()
+                        paceItem.view = createPaceView(paceInfo: paceInfo)
+                        submenu.addItem(paceItem)
+                    }
+
+                    submenu.addItem(NSMenuItem.separator())
+
+                    if let planName = copilotUsage.planDisplayName {
+                        let planItem = NSMenuItem()
+                        planItem.view = createDisabledLabelView(
+                            text: "Plan: \(planName)",
+                            icon: NSImage(systemSymbolName: "crown", accessibilityDescription: "Plan")
+                        )
+                        submenu.addItem(planItem)
+                    }
+
+                    let freeItem = NSMenuItem()
+                    freeItem.view = createDisabledLabelView(text: "Quota Limit: \(limit)")
+                    submenu.addItem(freeItem)
+
+                    submenu.addItem(NSMenuItem.separator())
+
+                    if let email = providerResults[.copilot]?.details?.email {
+                        let emailItem = NSMenuItem()
+                        emailItem.view = createDisabledLabelView(
+                            text: "Email: \(email)",
+                            icon: NSImage(systemSymbolName: "person.circle", accessibilityDescription: "User Email"),
+                            multiline: false
+                        )
+                        submenu.addItem(emailItem)
+                    }
+
+                    let authItem = NSMenuItem()
+                    authItem.view = createDisabledLabelView(
+                        text: "Token From: Browser Cookies (Chrome/Brave/Arc/Edge)",
+                        icon: NSImage(systemSymbolName: "key", accessibilityDescription: "Auth Source"),
+                        multiline: true
+                    )
+                    submenu.addItem(authItem)
+
+                    addSubscriptionItems(to: submenu, provider: .copilot)
+
+                    quotaItem.submenu = submenu
+                }
+
+                menu.insertItem(quotaItem, at: insertIndex)
+                insertIndex += 1
+            }
+
+        let quotaOrder: [ProviderIdentifier] = [
+            .claude,
+            .kimi,
+            .codex,
+            .zaiCodingPlan,
+            .antigravity,
+            .chutes,
+            .synthetic
+        ]
+        for identifier in quotaOrder {
+            guard isProviderEnabled(identifier) else { continue }
+
+            if let result = providerResults[identifier] {
+                if let accounts = result.accounts, !accounts.isEmpty {
+                    let authLabels = Set(
+                        accounts.map { account in
+                            authSourceLabel(for: account.details?.authSource, provider: identifier) ?? "Unknown"
+                        }
+                    )
+                    let showAuthLabel = authLabels.count > 1
+                    let baseName = multiAccountBaseName(for: identifier)
+                    for account in accounts {
+                        hasQuota = true
+                        var displayName = accounts.count > 1
+                            ? "\(baseName) #\(account.accountIndex + 1)"
+                            : baseName
+                        if accounts.count > 1, showAuthLabel {
+                            let sourceLabel = authSourceLabel(for: account.details?.authSource, provider: identifier) ?? "Unknown"
+                            displayName += " (\(sourceLabel))"
+                        }
+                        if (account.usage.totalEntitlement ?? 0) == 0 {
+                            displayName += " (No usage data)"
+                        }
+                        let usedPercent = account.usage.usagePercentage
+                        let item = createNativeQuotaMenuItem(
+                            name: displayName,
+                            usedPercent: usedPercent,
+                            icon: iconForProvider(identifier)
+                        )
+                        item.tag = 999
+
+                        if let details = account.details, details.hasAnyValue {
+                            item.submenu = createDetailSubmenu(details, identifier: identifier, accountId: account.accountId)
+                        }
+
+                        menu.insertItem(item, at: insertIndex)
+                        insertIndex += 1
+                    }
+                } else if case .quotaBased(let remaining, let entitlement, _) = result.usage {
                     hasQuota = true
-                    let item = NSMenuItem(title: "Gemini CLI (Loading...)", action: nil, keyEquivalent: "")
-                    item.image = iconForProvider(.geminiCLI)
-                    item.isEnabled = false
+                    let usedPercent = entitlement > 0
+                        ? (Double(entitlement - remaining) / Double(entitlement)) * 100
+                        : 0
+                    let item = createNativeQuotaMenuItem(
+                        name: identifier.displayName,
+                        usedPercent: usedPercent,
+                        icon: iconForProvider(identifier)
+                    )
                     item.tag = 999
+
+                    if let details = result.details, details.hasAnyValue {
+                        item.submenu = createDetailSubmenu(details, identifier: identifier)
+                    }
+
                     menu.insertItem(item, at: insertIndex)
                     insertIndex += 1
                 }
+            } else if let errorMessage = lastProviderErrors[identifier] {
+                hasQuota = true
+                let item = createErrorMenuItem(identifier: identifier, errorMessage: errorMessage)
+                menu.insertItem(item, at: insertIndex)
+                insertIndex += 1
+            } else if loadingProviders.contains(identifier) {
+                hasQuota = true
+                let item = NSMenuItem(title: "\(identifier.displayName) (Loading...)", action: nil, keyEquivalent: "")
+                item.image = iconForProvider(identifier)
+                item.isEnabled = false
+                item.tag = 999
+                menu.insertItem(item, at: insertIndex)
+                insertIndex += 1
             }
+        }
+
+        if isProviderEnabled(.geminiCLI) {
+            if let result = providerResults[.geminiCLI],
+               let details = result.details,
+               let geminiAccounts = details.geminiAccounts,
+               !geminiAccounts.isEmpty {
+                let geminiAuthLabels = Set(
+                    geminiAccounts.map { account in
+                        authSourceLabel(for: account.authSource, provider: .geminiCLI) ?? "Unknown"
+                    }
+                )
+                let showGeminiAuthLabel = geminiAuthLabels.count > 1
+
+                for account in geminiAccounts {
+                    hasQuota = true
+                    let accountNumber = account.accountIndex + 1
+                    let usedPercent = 100 - account.remainingPercentage
+                    var displayName = geminiAccounts.count > 1
+                        ? "Gemini CLI #\(accountNumber)"
+                        : "Gemini CLI"
+                    if geminiAccounts.count > 1, showGeminiAuthLabel {
+                        let sourceLabel = authSourceLabel(for: account.authSource, provider: .geminiCLI) ?? "Unknown"
+                        displayName += " (\(sourceLabel))"
+                    }
+                    let item = createNativeQuotaMenuItem(
+                        name: displayName,
+                        usedPercent: usedPercent,
+                        icon: iconForProvider(.geminiCLI)
+                    )
+                    item.tag = 999
+
+                    item.submenu = createGeminiAccountSubmenu(account)
+
+                    menu.insertItem(item, at: insertIndex)
+                    insertIndex += 1
+                }
+            } else if let errorMessage = lastProviderErrors[.geminiCLI] {
+                hasQuota = true
+                let item = createErrorMenuItem(identifier: .geminiCLI, errorMessage: errorMessage)
+                menu.insertItem(item, at: insertIndex)
+                insertIndex += 1
+            } else if loadingProviders.contains(.geminiCLI) {
+                hasQuota = true
+                let item = NSMenuItem(title: "Gemini CLI (Loading...)", action: nil, keyEquivalent: "")
+                item.image = iconForProvider(.geminiCLI)
+                item.isEnabled = false
+                item.tag = 999
+                menu.insertItem(item, at: insertIndex)
+                insertIndex += 1
+            }
+        }
 
         if !hasQuota {
             let noItem = NSMenuItem()
             noItem.view = createDisabledLabelView(text: "No providers")
             noItem.tag = 999
             menu.insertItem(noItem, at: insertIndex)
+            insertIndex += 1
+        }
+
+        let orphaned = calculateOrphanedSubscriptions(providerResults: providerResults)
+        orphanedSubscriptionKeys = orphaned.keys
+        orphanedSubscriptionTotal = orphaned.total
+        if orphaned.total > 0 {
+            let title = String(format: "Orphaned ($%.2f)", orphaned.total)
+            let orphanedItem = NSMenuItem(
+                title: title,
+                action: #selector(confirmResetOrphanedSubscriptions(_:)),
+                keyEquivalent: ""
+            )
+            orphanedItem.target = self
+            orphanedItem.attributedTitle = italicMenuTitle(title)
+            orphanedItem.image = orphanedIcon()
+            orphanedItem.tag = 999
+            menu.insertItem(orphanedItem, at: insertIndex)
             insertIndex += 1
         }
 
@@ -849,21 +1075,21 @@ final class StatusBarController: NSObject {
         logMenuStructure()
     }
 
-     private func logMenuStructure() {
-         let total = menu.items.count
-         let separators = menu.items.filter { $0.isSeparatorItem }.count
-         let withAction = menu.items.filter { !$0.isSeparatorItem && $0.action != nil }.count
-         let withSubmenu = menu.items.filter { $0.hasSubmenu }.count
-         
-         logger.info("📋 [Menu] Items: \(total) (sep:\(separators), actions:\(withAction), submenus:\(withSubmenu))")
-         
-         var output = "\n========== MENU STRUCTURE ==========\n"
-         for (index, item) in menu.items.enumerated() {
-             output += logMenuItem(item, depth: 0, index: index)
-         }
-         output += "====================================\n"
-         debugLog(output)
-     }
+    private func logMenuStructure() {
+        let total = menu.items.count
+        let separators = menu.items.filter { $0.isSeparatorItem }.count
+        let withAction = menu.items.filter { !$0.isSeparatorItem && $0.action != nil }.count
+        let withSubmenu = menu.items.filter { $0.hasSubmenu }.count
+
+        logger.info("📋 [Menu] Items: \(total) (sep:\(separators), actions:\(withAction), submenus:\(withSubmenu))")
+
+        var output = "\n========== MENU STRUCTURE ==========\n"
+        for (index, item) in menu.items.enumerated() {
+            output += logMenuItem(item, depth: 0, index: index)
+        }
+        output += "====================================\n"
+        debugLog(output)
+    }
 
     private func logMenuItem(_ item: NSMenuItem, depth: Int, index: Int) -> String {
         let indent = String(repeating: "  ", count: depth)
@@ -898,15 +1124,94 @@ final class StatusBarController: NSObject {
         return item
     }
 
-    private func createQuotaMenuItem(identifier: ProviderIdentifier, percentage: Double) -> NSMenuItem {
-        let title = String(format: "%@ (%.0f%% remaining)", identifier.displayName, percentage)
-        let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
-        item.image = iconForProvider(identifier)
+    private func multiAccountBaseName(for identifier: ProviderIdentifier) -> String {
+        switch identifier {
+        case .codex:
+            return "ChatGPT"
+        default:
+            return identifier.displayName
+        }
+    }
 
-        if percentage < 20 {
-            item.image = tintedImage(iconForProvider(identifier), color: .systemRed)
+    private func authSourceLabel(for authSource: String?, provider: ProviderIdentifier) -> String? {
+        guard let authSource = authSource, !authSource.isEmpty else { return nil }
+        let lowercased = authSource.lowercased()
+
+        if lowercased.contains("opencode") {
+            return "OpenCode"
         }
 
+        switch provider {
+        case .codex:
+            if lowercased.contains(".codex") || lowercased.contains("/codex/") {
+                return "Codex"
+            }
+        case .claude:
+            if lowercased.contains("keychain") {
+                return "Claude Code (Keychain)"
+            }
+            if lowercased.contains("claude-code") {
+                return "Claude Code"
+            }
+            if lowercased.contains(".credentials.json") || lowercased.contains(".claude") {
+                return "Claude Code (Legacy)"
+            }
+        case .copilot:
+            if lowercased.contains("browser cookies") {
+                return "Browser Cookies"
+            }
+            if lowercased.contains("github-copilot") {
+                if lowercased.contains("hosts.json") {
+                    return "VS Code (hosts.json)"
+                }
+                if lowercased.contains("apps.json") {
+                    return "VS Code (apps.json)"
+                }
+                return "VS Code"
+            }
+        case .geminiCLI:
+            if lowercased.contains("antigravity") {
+                return "Antigravity"
+            }
+        default:
+            break
+        }
+
+        if lowercased.contains("keychain") {
+            return "Keychain"
+        }
+
+        return nil
+    }
+
+    /// Creates a native NSMenuItem for quota providers with colored usage percentage in parentheses.
+    /// Red color on name and percentage when usedPercent > 80% to warn about approaching limits.
+    private func createNativeQuotaMenuItem(name: String, usedPercent: Double, icon: NSImage?) -> NSMenuItem {
+        let percentText = String(format: "(%.0f%%)", usedPercent)
+        let percentColor: NSColor = usedPercent > 80 ? .systemRed : .secondaryLabelColor
+        
+        let attributed = NSMutableAttributedString()
+        // Provider name in default font
+        attributed.append(NSAttributedString(
+            string: "\(name) ",
+            attributes: [.font: MenuDesignToken.Typography.defaultFont]
+        ))
+        // Percentage in parentheses, colored when usage is critically high
+        attributed.append(NSAttributedString(
+            string: percentText,
+            attributes: [
+                .font: MenuDesignToken.Typography.defaultFont,
+                .foregroundColor: percentColor
+            ]
+        ))
+        
+        let item = NSMenuItem()
+        item.attributedTitle = attributed
+        item.image = icon
+        // Tint icon red when usage is critically high
+        if usedPercent > 80, let icon = icon {
+            item.image = tintedImage(icon, color: .systemRed)
+        }
         return item
     }
 
@@ -967,6 +1272,8 @@ final class StatusBarController: NSObject {
             image = NSImage(named: "ZaiIcon")
         case .synthetic:
             image = NSImage(named: "SyntheticIcon")
+        case .chutes:
+            image = NSImage(named: "ChutesIcon")
         }
 
          // Resize icons to 16x16 for consistent menu appearance
@@ -1188,7 +1495,7 @@ final class StatusBarController: NSObject {
 
     @objc private func openGitHub() {
         logger.info("Opening GitHub repository")
-        if let url = URL(string: "https://github.com/kargnas/opencode-bar") {
+        if let url = URL(string: "https://github.com/opgginc/opencode-bar") {
             NSWorkspace.shared.open(url)
         }
     }
@@ -1197,6 +1504,50 @@ final class StatusBarController: NSObject {
         logger.info("⌨️ [Keyboard] ⌘E View Error Details triggered")
         debugLog("⌨️ viewErrorDetailsClicked: ⌘E shortcut activated")
         showErrorDetailsAlert()
+    }
+
+    @objc private func confirmResetOrphanedSubscriptions(_ sender: NSMenuItem) {
+        guard !orphanedSubscriptionKeys.isEmpty else {
+            debugLog("confirmResetOrphanedSubscriptions: no orphaned subscriptions to reset")
+            return
+        }
+
+        let orphanedCount = orphanedSubscriptionKeys.count
+        let formattedTotal = String(format: "%.2f", orphanedSubscriptionTotal)
+        let sanitizedKeys = orphanedSubscriptionKeys.map { sanitizedSubscriptionKey($0) }.joined(separator: ", ")
+        debugLog("confirmResetOrphanedSubscriptions: \(orphanedCount) key(s) pending, total=$\(formattedTotal), keys=[\(sanitizedKeys)]")
+
+        let entryLabel = orphanedCount == 1 ? "entry" : "entries"
+        let detailText = "This will delete \(orphanedCount) stored subscription \(entryLabel) that no longer match any detected account or provider. This can happen after refactors, account removal, or auth changes. Total to clear: $\(formattedTotal)."
+
+        NSApp.activate(ignoringOtherApps: true)
+
+        let alert = NSAlert()
+        alert.messageText = "Reset orphaned subscriptions?"
+        alert.informativeText = detailText
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Reset")
+        alert.addButton(withTitle: "Cancel")
+
+        let response = alert.runModal()
+        if response == .alertFirstButtonReturn {
+            resetOrphanedSubscriptions()
+        } else {
+            debugLog("confirmResetOrphanedSubscriptions: reset cancelled")
+        }
+    }
+
+    private func resetOrphanedSubscriptions() {
+        let orphanedCount = orphanedSubscriptionKeys.count
+        let formattedTotal = String(format: "%.2f", orphanedSubscriptionTotal)
+        let sanitizedKeys = orphanedSubscriptionKeys.map { sanitizedSubscriptionKey($0) }.joined(separator: ", ")
+        debugLog("resetOrphanedSubscriptions: resetting \(orphanedCount) key(s), total=$\(formattedTotal), keys=[\(sanitizedKeys)]")
+        logger.info("Resetting orphaned subscription entries: count=\(orphanedCount), total=$\(formattedTotal)")
+
+        SubscriptionSettingsManager.shared.removePlans(forKeys: orphanedSubscriptionKeys)
+        orphanedSubscriptionKeys = []
+        orphanedSubscriptionTotal = 0
+        updateMultiProviderMenu()
     }
     
     private func showErrorDetailsAlert() {
@@ -1301,7 +1652,7 @@ final class StatusBarController: NSObject {
         let encodedTitle = title.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
         let encodedBody = body.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
         
-        if let url = URL(string: "https://github.com/kargnas/opencode-bar/issues/new?title=\(encodedTitle)&body=\(encodedBody)") {
+        if let url = URL(string: "https://github.com/opgginc/opencode-bar/issues/new?title=\(encodedTitle)&body=\(encodedBody)") {
             NSWorkspace.shared.open(url)
         }
     }
@@ -1329,7 +1680,7 @@ final class StatusBarController: NSObject {
 
         if response == .alertFirstButtonReturn {
             debugLog("GitHub star prompt: opening GitHub page")
-            if let url = URL(string: "https://github.com/kargnas/opencode-bar") {
+            if let url = URL(string: "https://github.com/opgginc/opencode-bar") {
                 NSWorkspace.shared.open(url)
             }
         } else {

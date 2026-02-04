@@ -16,10 +16,15 @@ struct GeminiQuotaResponse: Codable {
     let buckets: [Bucket]
 }
 
+struct GeminiUserInfoResponse: Codable {
+    let email: String?
+}
+
 // MARK: - GeminiCLIProvider Implementation
 
 /// Provider for Google Gemini CLI quota tracking via cloudcode-pa.googleapis.com
-/// Uses OAuth token refresh from antigravity-accounts.json
+/// Uses OAuth token refresh from NoeFabris/opencode-antigravity-auth (antigravity-accounts.json)
+/// and jenslys/opencode-gemini-auth (OpenCode auth.json google.oauth).
 final class GeminiCLIProvider: ProviderProtocol {
     let identifier: ProviderIdentifier = .geminiCLI
     let type: ProviderType = .quotaBased
@@ -42,28 +47,54 @@ final class GeminiCLIProvider: ProviderProtocol {
             throw ProviderError.authenticationFailed("No Gemini accounts configured")
         }
 
-        var geminiAccountQuotas: [GeminiAccountQuota] = []
-        var overallMinPercentage = 100.0
+        if allAccounts.contains(where: { $0.source == .opencodeAuth }) {
+            logger.info("Gemini CLI: Using jenslys/opencode-gemini-auth (OpenCode auth.json google.oauth)")
+        }
+
+        var candidates: [GeminiAccountCandidate] = []
 
         for account in allAccounts {
             do {
-                let quotaResult = try await fetchQuotaForAccount(
-                    refreshToken: account.refreshToken,
-                    accountIndex: account.index,
-                    email: account.email,
-                    projectId: account.projectId
-                )
-                geminiAccountQuotas.append(quotaResult)
-                overallMinPercentage = min(overallMinPercentage, quotaResult.remainingPercentage)
+                let quotaResult = try await fetchQuotaForAccount(account: account)
+                candidates.append(GeminiAccountCandidate(quota: quotaResult, source: account.source))
             } catch {
-                logger.warning("Failed to fetch quota for account #\(account.index + 1) (\(account.email)): \(error.localizedDescription)")
+                let displayEmail = account.email?.isEmpty == false ? account.email ?? "" : "unknown"
+                logger.warning("Failed to fetch quota for account #\(account.index + 1) (\(displayEmail)): \(error.localizedDescription)")
             }
         }
 
-        guard !geminiAccountQuotas.isEmpty else {
+        guard !candidates.isEmpty else {
             logger.error("Failed to fetch quota for any Gemini account")
             throw ProviderError.providerError("All account quota fetches failed")
         }
+
+        let deduped = CandidateDedupe.merge(
+            candidates,
+            accountId: { candidate in
+                let email = candidate.quota.email.trimmingCharacters(in: .whitespacesAndNewlines)
+                return email == "Unknown" || email.isEmpty ? nil : email
+            },
+            isSameUsage: { isSameUsage($0.quota, $1.quota) },
+            priority: { sourcePriority($0.source) }
+        )
+        let sorted = deduped.sorted { lhs, rhs in
+            sourcePriority(lhs.source) > sourcePriority(rhs.source)
+        }
+
+        let geminiAccountQuotas: [GeminiAccountQuota] = sorted.enumerated().map { index, candidate in
+            let quota = candidate.quota
+            return GeminiAccountQuota(
+                accountIndex: index,
+                email: quota.email,
+                remainingPercentage: quota.remainingPercentage,
+                modelBreakdown: quota.modelBreakdown,
+                authSource: quota.authSource,
+                earliestReset: quota.earliestReset,
+                modelResetTimes: quota.modelResetTimes
+            )
+        }
+
+        let overallMinPercentage = geminiAccountQuotas.map { $0.remainingPercentage }.min() ?? 100.0
 
         logger.info("Gemini CLI: Fetched quota for \(geminiAccountQuotas.count)/\(allAccounts.count) accounts, overall min: \(overallMinPercentage)%")
 
@@ -73,19 +104,76 @@ final class GeminiCLIProvider: ProviderProtocol {
             overagePermitted: false
         )
 
+        let authSources = Set(geminiAccountQuotas.map { $0.authSource })
+        let authSourceSummary: String?
+        if authSources.count == 1 {
+            authSourceSummary = authSources.first
+        } else if authSources.count > 1 {
+            authSourceSummary = "Multiple auth sources"
+        } else {
+            authSourceSummary = nil
+        }
+
         let details = DetailedUsage(
-            authSource: "~/.config/opencode/antigravity-accounts.json",
+            authSource: authSourceSummary,
             geminiAccounts: geminiAccountQuotas
         )
 
         return ProviderResult(usage: usage, details: details)
     }
 
+    private struct GeminiAccountCandidate {
+        let quota: GeminiAccountQuota
+        let source: GeminiAuthSource
+    }
+
+    private func sourcePriority(_ source: GeminiAuthSource) -> Int {
+        switch source {
+        case .opencodeAuth:
+            return 2
+        case .antigravity:
+            return 1
+        }
+    }
+
+    private func isSameUsage(_ lhs: GeminiAccountQuota, _ rhs: GeminiAccountQuota) -> Bool {
+        let remainingMatch = lhs.remainingPercentage == rhs.remainingPercentage
+        let resetMatch = sameDate(lhs.earliestReset, rhs.earliestReset)
+        let modelsMatch = lhs.modelBreakdown == rhs.modelBreakdown
+        return remainingMatch && resetMatch && modelsMatch
+    }
+
+    private func sameDate(_ lhs: Date?, _ rhs: Date?) -> Bool {
+        switch (lhs, rhs) {
+        case (nil, nil):
+            return true
+        case let (left?, right?):
+            return Int(left.timeIntervalSince1970) == Int(right.timeIntervalSince1970)
+        default:
+            return false
+        }
+    }
+
     // MARK: - Private Helpers
 
-    private func fetchQuotaForAccount(refreshToken: String, accountIndex: Int, email: String, projectId: String) async throws -> GeminiAccountQuota {
-        guard let accessToken = await tokenManager.refreshGeminiAccessToken(refreshToken: refreshToken) else {
+    private func fetchQuotaForAccount(account: GeminiAuthAccount) async throws -> GeminiAccountQuota {
+        let accountIndex = account.index
+        let projectId = account.projectId.trimmingCharacters(in: .whitespacesAndNewlines)
+        if projectId.isEmpty {
+            throw ProviderError.authenticationFailed("Missing project ID for account #\(accountIndex + 1)")
+        }
+
+        guard let accessToken = await tokenManager.refreshGeminiAccessToken(
+            refreshToken: account.refreshToken,
+            clientId: account.clientId,
+            clientSecret: account.clientSecret
+        ) else {
             throw ProviderError.authenticationFailed("Unable to refresh token for account #\(accountIndex + 1)")
+        }
+
+        let resolvedEmail = await resolveGeminiAccountEmail(primaryEmail: account.email, accessToken: accessToken)
+        if resolvedEmail == "Unknown" {
+            logger.warning("Gemini CLI: Email lookup failed for account #\(accountIndex + 1)")
         }
 
         guard let url = URL(string: "https://cloudcode-pa.googleapis.com/v1internal:retrieveUserQuota") else {
@@ -147,16 +235,58 @@ final class GeminiCLIProvider: ProviderProtocol {
 
         let remainingPercentage = minFraction * 100.0
 
-        logger.info("Gemini CLI account #\(accountIndex + 1) (\(email)): \(remainingPercentage)% remaining, resets: \(earliestReset?.description ?? "unknown")")
+        logger.info("Gemini CLI account #\(accountIndex + 1) (\(resolvedEmail)): \(remainingPercentage)% remaining, resets: \(earliestReset?.description ?? "unknown")")
 
         return GeminiAccountQuota(
             accountIndex: accountIndex,
-            email: email,
+            email: resolvedEmail,
             remainingPercentage: remainingPercentage,
             modelBreakdown: modelBreakdown,
-            authSource: "~/.config/opencode/antigravity-accounts.json",
+            authSource: account.authSource,
             earliestReset: earliestReset,
             modelResetTimes: modelResetTimes
         )
+    }
+
+    private func resolveGeminiAccountEmail(primaryEmail: String?, accessToken: String) async -> String {
+        if let email = primaryEmail?.trimmingCharacters(in: .whitespacesAndNewlines), !email.isEmpty {
+            return email
+        }
+
+        if let fetchedEmail = await fetchGeminiUserEmail(accessToken: accessToken) {
+            return fetchedEmail
+        }
+
+        return "Unknown"
+    }
+
+    private func fetchGeminiUserEmail(accessToken: String) async -> String? {
+        guard let url = URL(string: "https://www.googleapis.com/oauth2/v1/userinfo?alt=json") else {
+            logger.warning("Gemini CLI: Invalid userinfo endpoint URL")
+            return nil
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+
+        do {
+            let (data, response) = try await session.data(for: request)
+            guard let httpResponse = response as? HTTPURLResponse else {
+                logger.warning("Gemini CLI: Invalid response type from userinfo endpoint")
+                return nil
+            }
+
+            guard httpResponse.statusCode == 200 else {
+                logger.warning("Gemini CLI: Userinfo request failed with status \(httpResponse.statusCode)")
+                return nil
+            }
+
+            let payload = try JSONDecoder().decode(GeminiUserInfoResponse.self, from: data)
+            return payload.email?.trimmingCharacters(in: .whitespacesAndNewlines)
+        } catch {
+            logger.warning("Gemini CLI: Failed to fetch user email: \(error.localizedDescription)")
+            return nil
+        }
     }
 }

@@ -3,7 +3,7 @@ import Foundation
 
 extension StatusBarController {
 
-    func createDetailSubmenu(_ details: DetailedUsage, identifier: ProviderIdentifier) -> NSMenu {
+    func createDetailSubmenu(_ details: DetailedUsage, identifier: ProviderIdentifier, accountId: String? = nil) -> NSMenu {
         let submenu = NSMenu()
 
         switch identifier {
@@ -105,125 +105,152 @@ extension StatusBarController {
             historyItem.submenu = historySubmenu
             submenu.addItem(historyItem)
 
-        case .claude:
-            if let fiveHour = details.fiveHourUsage {
-                let item = NSMenuItem()
-                item.view = createDisabledLabelView(text: String(format: "5h Window: %.0f%%", fiveHour))
-                submenu.addItem(item)
-                if let reset = details.fiveHourReset {
-                    let formatter = DateFormatter()
-                    formatter.dateFormat = "yyyy-MM-dd HH:mm zzz"
-                    formatter.timeZone = TimeZone.current
-                    let resetItem = NSMenuItem()
-                    resetItem.view = createDisabledLabelView(text: "Resets: \(formatter.string(from: reset))", indent: 18)
-                    submenu.addItem(resetItem)
+        case .copilot:
+            // === Usage ===
+            if let used = details.copilotUsedRequests, let limit = details.copilotLimitRequests, limit > 0 {
+                let filledBlocks = Int((Double(used) / Double(max(limit, 1))) * 10)
+                let emptyBlocks = 10 - filledBlocks
+                let progressBar = String(repeating: "═", count: filledBlocks) + String(repeating: "░", count: emptyBlocks)
+                let progressItem = NSMenuItem()
+                progressItem.view = createDisabledLabelView(text: "[\(progressBar)] \(used)/\(limit)")
+                submenu.addItem(progressItem)
 
-                    let paceInfo = calculatePace(usage: fiveHour, resetTime: reset, windowHours: 5)
-                    let paceItem = NSMenuItem()
-                    paceItem.view = createPaceView(paceInfo: paceInfo)
-                    submenu.addItem(paceItem)
+                let usagePercent = (Double(used) / Double(limit)) * 100
+                let items = createUsageWindowRow(label: "Monthly", usagePercent: usagePercent, resetDate: details.copilotQuotaResetDateUTC, isMonthly: true)
+                items.forEach { submenu.addItem($0) }
+            } else {
+                let item = NSMenuItem()
+                item.view = createDisabledLabelView(text: "Usage data unavailable")
+                submenu.addItem(item)
+            }
+
+            // === Plan & Quota ===
+            submenu.addItem(NSMenuItem.separator())
+
+            if let planType = details.planType {
+                // Replicate CopilotUsage.planDisplayName logic since DetailedUsage stores raw plan string
+                let planName: String
+                switch planType.lowercased() {
+                case "individual_pro": planName = "Pro"
+                case "individual_free": planName = "Free"
+                case "business": planName = "Business"
+                case "enterprise": planName = "Enterprise"
+                default: planName = planType.replacingOccurrences(of: "_", with: " ").capitalized
                 }
+                let planItem = NSMenuItem()
+                planItem.view = createDisabledLabelView(
+                    text: "Plan: \(planName)",
+                    icon: NSImage(systemSymbolName: "crown", accessibilityDescription: "Plan")
+                )
+                submenu.addItem(planItem)
+            }
+
+            if let limit = details.copilotLimitRequests {
+                let freeItem = NSMenuItem()
+                freeItem.view = createDisabledLabelView(text: "Quota Limit: \(limit)")
+                submenu.addItem(freeItem)
+            }
+
+            // === Account Info ===
+            submenu.addItem(NSMenuItem.separator())
+
+            if let email = details.email {
+                let emailItem = NSMenuItem()
+                emailItem.view = createDisabledLabelView(
+                    text: "Account: \(email)",
+                    icon: NSImage(systemSymbolName: "person.circle", accessibilityDescription: "User Account"),
+                    multiline: false
+                )
+                submenu.addItem(emailItem)
+            }
+
+            let authSource = details.authSource ?? "Browser Cookies (Chrome/Brave/Arc/Edge)"
+            let authItem = NSMenuItem()
+            authItem.view = createDisabledLabelView(
+                text: "Token From: \(authSource)",
+                icon: NSImage(systemSymbolName: "key", accessibilityDescription: "Auth Source"),
+                multiline: true
+            )
+            submenu.addItem(authItem)
+
+            // === Subscription ===
+            addSubscriptionItems(to: submenu, provider: .copilot, accountId: accountId)
+
+        case .claude:
+            // === Usage Windows ===
+            if let fiveHour = details.fiveHourUsage {
+                let items = createUsageWindowRow(
+                    label: "5h",
+                    usagePercent: fiveHour,
+                    resetDate: details.fiveHourReset,
+                    windowHours: 5
+                )
+                items.forEach { submenu.addItem($0) }
             }
             if let sevenDay = details.sevenDayUsage {
-                let item = NSMenuItem()
-                item.view = createDisabledLabelView(text: String(format: "7d Window: %.0f%%", sevenDay))
-                submenu.addItem(item)
-                if let reset = details.sevenDayReset {
-                    let formatter = DateFormatter()
-                    formatter.dateFormat = "yyyy-MM-dd HH:mm zzz"
-                    formatter.timeZone = TimeZone.current
-                    let resetItem = NSMenuItem()
-                    resetItem.view = createDisabledLabelView(text: "Resets: \(formatter.string(from: reset))", indent: 18)
-                    submenu.addItem(resetItem)
-
-                    let paceInfo = calculatePace(usage: sevenDay, resetTime: reset, windowHours: 168)
-                    let paceItem = NSMenuItem()
-                    paceItem.view = createPaceView(paceInfo: paceInfo)
-                    submenu.addItem(paceItem)
-                }
+                let items = createUsageWindowRow(
+                    label: "Weekly",
+                    usagePercent: sevenDay,
+                    resetDate: details.sevenDayReset,
+                    windowHours: 168
+                )
+                items.forEach { submenu.addItem($0) }
             }
+
+            // === Model Breakdown ===
             submenu.addItem(NSMenuItem.separator())
             if let sonnet = details.sonnetUsage {
-                let item = NSMenuItem()
-                item.view = createDisabledLabelView(text: String(format: "Sonnet (7d): %.0f%%", sonnet))
-                submenu.addItem(item)
-                if let reset = details.sonnetReset {
-                    let formatter = DateFormatter()
-                    formatter.dateFormat = "yyyy-MM-dd HH:mm zzz"
-                    formatter.timeZone = TimeZone.current
-                    let resetItem = NSMenuItem()
-                    resetItem.view = createDisabledLabelView(text: "Resets: \(formatter.string(from: reset))", indent: 18)
-                    submenu.addItem(resetItem)
-
-                    let paceInfo = calculatePace(usage: sonnet, resetTime: reset, windowHours: 168)
-                    let paceItem = NSMenuItem()
-                    paceItem.view = createPaceView(paceInfo: paceInfo)
-                    submenu.addItem(paceItem)
-                }
+                let items = createUsageWindowRow(
+                    label: "Sonnet (Weekly)",
+                    usagePercent: sonnet,
+                    resetDate: details.sonnetReset,
+                    windowHours: 168
+                )
+                items.forEach { submenu.addItem($0) }
             }
             if let opus = details.opusUsage {
-                let item = NSMenuItem()
-                item.view = createDisabledLabelView(text: String(format: "Opus (7d): %.0f%%", opus))
-                submenu.addItem(item)
-                if let reset = details.opusReset {
-                    let formatter = DateFormatter()
-                    formatter.dateFormat = "yyyy-MM-dd HH:mm zzz"
-                    formatter.timeZone = TimeZone.current
-                    let resetItem = NSMenuItem()
-                    resetItem.view = createDisabledLabelView(text: "Resets: \(formatter.string(from: reset))", indent: 18)
-                    submenu.addItem(resetItem)
-
-                    let paceInfo = calculatePace(usage: opus, resetTime: reset, windowHours: 168)
-                    let paceItem = NSMenuItem()
-                    paceItem.view = createPaceView(paceInfo: paceInfo)
-                    submenu.addItem(paceItem)
-                }
+                let items = createUsageWindowRow(
+                    label: "Opus (Weekly)",
+                    usagePercent: opus,
+                    resetDate: details.opusReset,
+                    windowHours: 168
+                )
+                items.forEach { submenu.addItem($0) }
             }
+
+            // === Extra Usage ===
             if let extraUsage = details.extraUsageEnabled {
                 let item = NSMenuItem()
                 item.view = createDisabledLabelView(text: "Extra Usage: \(extraUsage ? "ON" : "OFF")")
                 submenu.addItem(item)
             }
 
-            addSubscriptionItems(to: submenu, provider: .claude)
+            // === Subscription (includes separator internally) ===
+            addSubscriptionItems(to: submenu, provider: .claude, accountId: accountId)
 
         case .codex:
+            // === Usage Windows ===
             if let primary = details.dailyUsage {
-                let item = NSMenuItem()
-                item.view = createDisabledLabelView(text: String(format: "Primary: %.0f%%", primary))
-                submenu.addItem(item)
-                if let reset = details.primaryReset {
-                    let formatter = DateFormatter()
-                    formatter.dateFormat = "yyyy-MM-dd HH:mm zzz"
-                    formatter.timeZone = TimeZone.current
-                    let resetItem = NSMenuItem()
-                    resetItem.view = createDisabledLabelView(text: "Resets: \(formatter.string(from: reset))", indent: 18)
-                    submenu.addItem(resetItem)
-
-                    let paceInfo = calculatePace(usage: primary, resetTime: reset, windowHours: 24)
-                    let paceItem = NSMenuItem()
-                    paceItem.view = createPaceView(paceInfo: paceInfo)
-                    submenu.addItem(paceItem)
-                }
+                // BUGFIX: Codex primary window is 5 hours, not 24
+                let items = createUsageWindowRow(
+                    label: "5h",
+                    usagePercent: primary,
+                    resetDate: details.primaryReset,
+                    windowHours: 5
+                )
+                items.forEach { submenu.addItem($0) }
             }
             if let secondary = details.secondaryUsage {
-                let item = NSMenuItem()
-                item.view = createDisabledLabelView(text: String(format: "Secondary: %.0f%%", secondary))
-                submenu.addItem(item)
-                if let reset = details.secondaryReset {
-                    let formatter = DateFormatter()
-                    formatter.dateFormat = "yyyy-MM-dd HH:mm zzz"
-                    formatter.timeZone = TimeZone.current
-                    let resetItem = NSMenuItem()
-                    resetItem.view = createDisabledLabelView(text: "Resets: \(formatter.string(from: reset))", indent: 18)
-                    submenu.addItem(resetItem)
-
-                    let paceInfo = calculatePace(usage: secondary, resetTime: reset, windowHours: 24)
-                    let paceItem = NSMenuItem()
-                    paceItem.view = createPaceView(paceInfo: paceInfo)
-                    submenu.addItem(paceItem)
-                }
+                let items = createUsageWindowRow(
+                    label: "Weekly",
+                    usagePercent: secondary,
+                    resetDate: details.secondaryReset,
+                    windowHours: 168
+                )
+                items.forEach { submenu.addItem($0) }
             }
+
+            // === Credits & Plan ===
             submenu.addItem(NSMenuItem.separator())
             if let plan = details.planType {
                 let item = NSMenuItem()
@@ -236,13 +263,16 @@ extension StatusBarController {
                 submenu.addItem(item)
             }
 
-            addSubscriptionItems(to: submenu, provider: .codex)
+            // === Subscription ===
+            addSubscriptionItems(to: submenu, provider: .codex, accountId: accountId)
 
         case .geminiCLI:
+            // modelBreakdown stores remaining% — convert to used% at display layer
             if let models = details.modelBreakdown, !models.isEmpty {
-                for (model, quota) in models.sorted(by: { $0.key < $1.key }) {
+                for (model, remainingPercent) in models.sorted(by: { $0.key < $1.key }) {
+                    let usedPercent = 100 - remainingPercent
                     let item = NSMenuItem()
-                    item.view = createDisabledLabelView(text: String(format: "%@: %.0f%%", model, quota))
+                    item.view = createDisabledLabelView(text: String(format: "%@: %.0f%% used", model, usedPercent))
                     submenu.addItem(item)
                 }
             }
@@ -256,69 +286,54 @@ extension StatusBarController {
                 submenu.addItem(item)
             }
 
-            addSubscriptionItems(to: submenu, provider: .geminiCLI, accountId: details.email)
+            addSubscriptionItems(to: submenu, provider: .geminiCLI, accountId: accountId ?? details.email)
 
         case .antigravity:
+            // modelBreakdown stores remaining% — convert to used% at display layer
             if let models = details.modelBreakdown, !models.isEmpty {
-                for (model, quota) in models.sorted(by: { $0.key < $1.key }) {
+                for (model, remainingPercent) in models.sorted(by: { $0.key < $1.key }) {
+                    let usedPercent = 100 - remainingPercent
                     let item = NSMenuItem()
-                    item.view = createDisabledLabelView(text: String(format: "%@: %.0f%%", model, quota))
+                    item.view = createDisabledLabelView(text: String(format: "%@: %.0f%% used", model, usedPercent))
                     submenu.addItem(item)
                 }
             }
-            if details.planType != nil || details.email != nil {
-                submenu.addItem(NSMenuItem.separator())
-            }
+
+            var accountItems: [(sfSymbol: String, text: String)] = []
             if let plan = details.planType {
-                let item = NSMenuItem()
-                item.view = createDisabledLabelView(text: "Plan: \(plan)")
-                submenu.addItem(item)
+                accountItems.append((sfSymbol: "crown", text: "Plan: \(plan)"))
             }
             if let email = details.email {
-                let item = NSMenuItem()
-                item.view = createDisabledLabelView(text: "Email: \(email)")
-                submenu.addItem(item)
+                accountItems.append((sfSymbol: "person.circle", text: "Email: \(email)"))
+            }
+            if !accountItems.isEmpty {
+                createAccountInfoSection(items: accountItems).forEach { submenu.addItem($0) }
             }
 
-            addSubscriptionItems(to: submenu, provider: .antigravity)
+            addSubscriptionItems(to: submenu, provider: .antigravity, accountId: accountId)
 
         case .kimi:
+            // === Usage Windows ===
             if let fiveHour = details.fiveHourUsage {
-                let item = NSMenuItem()
-                item.view = createDisabledLabelView(text: String(format: "5h Window: %.0f%%", fiveHour))
-                submenu.addItem(item)
-                if let reset = details.fiveHourReset {
-                    let formatter = DateFormatter()
-                    formatter.dateFormat = "yyyy-MM-dd HH:mm zzz"
-                    formatter.timeZone = TimeZone.current
-                    let resetItem = NSMenuItem()
-                    resetItem.view = createDisabledLabelView(text: "Resets: \(formatter.string(from: reset))", indent: 18)
-                    submenu.addItem(resetItem)
-
-                    let paceInfo = calculatePace(usage: fiveHour, resetTime: reset, windowHours: 5)
-                    let paceItem = NSMenuItem()
-                    paceItem.view = createPaceView(paceInfo: paceInfo)
-                    submenu.addItem(paceItem)
-                }
+                let items = createUsageWindowRow(
+                    label: "5h",
+                    usagePercent: fiveHour,
+                    resetDate: details.fiveHourReset,
+                    windowHours: 5
+                )
+                items.forEach { submenu.addItem($0) }
             }
             if let weekly = details.sevenDayUsage {
-                let item = NSMenuItem()
-                item.view = createDisabledLabelView(text: String(format: "Weekly: %.0f%%", weekly))
-                submenu.addItem(item)
-                if let reset = details.sevenDayReset {
-                    let formatter = DateFormatter()
-                    formatter.dateFormat = "yyyy-MM-dd HH:mm zzz"
-                    formatter.timeZone = TimeZone.current
-                    let resetItem = NSMenuItem()
-                    resetItem.view = createDisabledLabelView(text: "Resets: \(formatter.string(from: reset))", indent: 18)
-                    submenu.addItem(resetItem)
-
-                    let paceInfo = calculatePace(usage: weekly, resetTime: reset, windowHours: 168)
-                    let paceItem = NSMenuItem()
-                    paceItem.view = createPaceView(paceInfo: paceInfo)
-                    submenu.addItem(paceItem)
-                }
+                let items = createUsageWindowRow(
+                    label: "Weekly",
+                    usagePercent: weekly,
+                    resetDate: details.sevenDayReset,
+                    windowHours: 168
+                )
+                items.forEach { submenu.addItem($0) }
             }
+
+            // === Plan ===
             if let plan = details.planType {
                 submenu.addItem(NSMenuItem.separator())
                 let item = NSMenuItem()
@@ -326,68 +341,44 @@ extension StatusBarController {
                 submenu.addItem(item)
             }
 
-            addSubscriptionItems(to: submenu, provider: .kimi)
+            // === Subscription ===
+            addSubscriptionItems(to: submenu, provider: .kimi, accountId: accountId)
 
         case .zaiCodingPlan:
+            // === Token Usage ===
+            if let tokenUsage = details.tokenUsagePercent {
+                let items = createUsageWindowRow(
+                    label: "Tokens (5h)",
+                    usagePercent: tokenUsage,
+                    resetDate: details.tokenUsageReset,
+                    windowHours: 5
+                )
+                items.forEach { submenu.addItem($0) }
+            }
+            if let tokenUsed = details.tokenUsageUsed, let tokenTotal = details.tokenUsageTotal {
+                let item = createLimitRow(label: "Tokens", used: Double(tokenUsed), total: Double(tokenTotal))
+                submenu.addItem(item)
+            }
+
+            // === MCP Usage ===
+            if let mcpUsage = details.mcpUsagePercent {
+                let items = createUsageWindowRow(
+                    label: "MCP (Monthly)",
+                    usagePercent: mcpUsage,
+                    resetDate: details.mcpUsageReset,
+                    isMonthly: true
+                )
+                items.forEach { submenu.addItem($0) }
+            }
+            if let mcpUsed = details.mcpUsageUsed, let mcpTotal = details.mcpUsageTotal {
+                let item = createLimitRow(label: "MCP", used: Double(mcpUsed), total: Double(mcpTotal))
+                submenu.addItem(item)
+            }
+
+            // === Last 24h stats (provider-specific, keep as-is) ===
             let numberFormatter = NumberFormatter()
             numberFormatter.numberStyle = .decimal
             numberFormatter.maximumFractionDigits = 0
-
-            if let tokenUsage = details.tokenUsagePercent {
-                let item = NSMenuItem()
-                item.view = createDisabledLabelView(text: String(format: "Tokens (5h): %.0f%% used", tokenUsage))
-                submenu.addItem(item)
-
-                if let reset = details.tokenUsageReset {
-                    let formatter = DateFormatter()
-                    formatter.dateFormat = "yyyy-MM-dd HH:mm zzz"
-                    formatter.timeZone = TimeZone.current
-                    let resetItem = NSMenuItem()
-                    resetItem.view = createDisabledLabelView(text: "Resets: \(formatter.string(from: reset))", indent: 18)
-                    submenu.addItem(resetItem)
-
-                    let paceInfo = calculatePace(usage: tokenUsage, resetTime: reset, windowHours: 5)
-                    let paceItem = NSMenuItem()
-                    paceItem.view = createPaceView(paceInfo: paceInfo)
-                    submenu.addItem(paceItem)
-                }
-            }
-
-            if let tokenUsed = details.tokenUsageUsed, let tokenTotal = details.tokenUsageTotal {
-                let usedText = numberFormatter.string(from: NSNumber(value: tokenUsed)) ?? "\(tokenUsed)"
-                let totalText = numberFormatter.string(from: NSNumber(value: tokenTotal)) ?? "\(tokenTotal)"
-                let item = NSMenuItem()
-                item.view = createDisabledLabelView(text: "Tokens Used: \(usedText) / \(totalText)")
-                submenu.addItem(item)
-            }
-
-            if let mcpUsage = details.mcpUsagePercent {
-                let item = NSMenuItem()
-                item.view = createDisabledLabelView(text: String(format: "MCP (Month): %.0f%% used", mcpUsage))
-                submenu.addItem(item)
-
-                if let reset = details.mcpUsageReset {
-                    let formatter = DateFormatter()
-                    formatter.dateFormat = "yyyy-MM-dd HH:mm zzz"
-                    formatter.timeZone = TimeZone.current
-                    let resetItem = NSMenuItem()
-                    resetItem.view = createDisabledLabelView(text: "Resets: \(formatter.string(from: reset))", indent: 18)
-                    submenu.addItem(resetItem)
-
-                    let paceInfo = calculateMonthlyPace(usagePercent: mcpUsage, resetDate: reset)
-                    let paceItem = NSMenuItem()
-                    paceItem.view = createPaceView(paceInfo: paceInfo)
-                    submenu.addItem(paceItem)
-                }
-            }
-
-            if let mcpUsed = details.mcpUsageUsed, let mcpTotal = details.mcpUsageTotal {
-                let usedText = numberFormatter.string(from: NSNumber(value: mcpUsed)) ?? "\(mcpUsed)"
-                let totalText = numberFormatter.string(from: NSNumber(value: mcpTotal)) ?? "\(mcpTotal)"
-                let item = NSMenuItem()
-                item.view = createDisabledLabelView(text: "MCP Used: \(usedText) / \(totalText)")
-                submenu.addItem(item)
-            }
 
             if details.modelUsageTokens != nil || details.modelUsageCalls != nil {
                 submenu.addItem(NSMenuItem.separator())
@@ -438,7 +429,36 @@ extension StatusBarController {
                 submenu.addItem(item)
             }
 
-            addSubscriptionItems(to: submenu, provider: .zaiCodingPlan)
+            // === Subscription ===
+            addSubscriptionItems(to: submenu, provider: .zaiCodingPlan, accountId: accountId)
+
+        case .chutes:
+            if let daily = details.dailyUsage,
+               let limit = details.limit {
+                let used = Int(daily)
+                let total = Int(limit)
+                let percentage = total > 0 ? Int((Double(used) / Double(total)) * 100) : 0
+
+                let item = NSMenuItem()
+                item.view = createDisabledLabelView(text: String(format: "Daily: %d%% used (%d/%d)", percentage, used, total))
+                submenu.addItem(item)
+            }
+
+            submenu.addItem(NSMenuItem.separator())
+
+            if let plan = details.planType {
+                let item = NSMenuItem()
+                item.view = createDisabledLabelView(text: "Plan: \(plan)")
+                submenu.addItem(item)
+            }
+
+            if let credits = details.creditsBalance {
+                let item = NSMenuItem()
+                item.view = createDisabledLabelView(text: String(format: "Credits: $%.2f", credits))
+                submenu.addItem(item)
+            }
+
+            addSubscriptionItems(to: submenu, provider: .chutes)
 
         case .synthetic:
             if let fiveHour = details.fiveHourUsage {
@@ -539,46 +559,24 @@ extension StatusBarController {
     func createGeminiAccountSubmenu(_ account: GeminiAccountQuota) -> NSMenu {
         let submenu = NSMenu()
 
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd HH:mm zzz"
-        formatter.timeZone = TimeZone.current
-
-        for (model, quota) in account.modelBreakdown.sorted(by: { $0.key < $1.key }) {
-            let item = NSMenuItem()
-            item.view = createDisabledLabelView(text: String(format: "%@: %.0f%%", model, quota))
-            submenu.addItem(item)
-
-            if let resetDate = account.modelResetTimes[model] {
-                let resetItem = NSMenuItem()
-                resetItem.view = createDisabledLabelView(text: "Resets: \(formatter.string(from: resetDate))", indent: 18)
-                submenu.addItem(resetItem)
-
-                let usagePercent = 100 - quota
-                let paceInfo = calculatePace(usage: usagePercent, resetTime: resetDate, windowHours: 24)
-                let paceItem = NSMenuItem()
-                paceItem.view = createPaceView(paceInfo: paceInfo)
-                submenu.addItem(paceItem)
-            }
+        // modelBreakdown stores remaining% — convert to used% at display layer
+        // Gemini models have 24-hour quota windows
+        for (model, remainingPercent) in account.modelBreakdown.sorted(by: { $0.key < $1.key }) {
+            let usedPercent = 100 - remainingPercent
+            let items = createUsageWindowRow(
+                label: model,
+                usagePercent: usedPercent,
+                resetDate: account.modelResetTimes[model],
+                windowHours: 24
+            )
+            items.forEach { submenu.addItem($0) }
         }
 
-        submenu.addItem(NSMenuItem.separator())
-
-        let emailItem = NSMenuItem()
-        emailItem.view = createDisabledLabelView(
-            text: "Email: \(account.email)",
-            icon: NSImage(systemSymbolName: "person.circle", accessibilityDescription: "User Email")
-        )
-        submenu.addItem(emailItem)
-
-        submenu.addItem(NSMenuItem.separator())
-
-        let authItem = NSMenuItem()
-        authItem.view = createDisabledLabelView(
-            text: "Token From: \(account.authSource)",
-            icon: NSImage(systemSymbolName: "key", accessibilityDescription: "Auth Source"),
-            multiline: true
-        )
-        submenu.addItem(authItem)
+        let accountItems: [(sfSymbol: String, text: String)] = [
+            (sfSymbol: "person.circle", text: "Email: \(account.email)"),
+            (sfSymbol: "key", text: "Token From: \(account.authSource)")
+        ]
+        createAccountInfoSection(items: accountItems).forEach { submenu.addItem($0) }
 
         addSubscriptionItems(to: submenu, provider: .geminiCLI, accountId: account.email)
 
@@ -697,12 +695,14 @@ extension StatusBarController {
     }
 
     enum PaceStatus {
+        case usedUp
         case onTrack
         case slightlyFast
         case tooFast
 
         var color: NSColor {
             switch self {
+            case .usedUp: return .systemRed
             case .onTrack: return .systemGreen
             case .slightlyFast: return .systemOrange
             case .tooFast: return .systemRed
@@ -714,8 +714,13 @@ extension StatusBarController {
         let elapsedRatio: Double
         let usageRatio: Double
         let predictedFinalUsage: Double
+        let remainingSeconds: TimeInterval
+        let isExhausted: Bool
 
         var status: PaceStatus {
+            if isExhausted {
+                return .usedUp
+            }
             if usageRatio <= elapsedRatio {
                 return .onTrack
             } else if predictedFinalUsage <= 130 {
@@ -735,11 +740,32 @@ extension StatusBarController {
 
         var statusText: String {
             switch status {
+            case .usedUp: return "Used Up"
             case .onTrack: return "On Track"
             case .slightlyFast: return "Slightly Fast"
             case .tooFast: return "Too Fast"
             }
         }
+    }
+
+    private func formatRemainingTime(seconds: TimeInterval) -> String {
+        let totalSeconds = max(0, Int(seconds))
+        let totalMinutes = totalSeconds / 60
+        let totalHours = totalMinutes / 60
+        let days = totalHours / 24
+        let hours = totalHours % 24
+        let minutes = totalMinutes % 60
+
+        if days > 0 {
+            return "\(days)d \(hours)h left"
+        }
+        if totalHours > 0 {
+            return "\(totalHours)h left"
+        }
+        if totalMinutes == 0 {
+            return "less than 1m left"
+        }
+        return "\(minutes)m left"
     }
 
     func calculatePace(usage: Double, resetTime: Date, windowHours: Int) -> PaceInfo {
@@ -750,6 +776,7 @@ extension StatusBarController {
 
         let elapsedRatio = max(0, min(1, elapsedSeconds / windowSeconds))
         let usageRatio = usage / 100.0
+        let isExhausted = usage >= 100 && remainingSeconds > 0
 
         let predictedFinalUsage: Double
         if elapsedRatio > 0.01 {
@@ -761,7 +788,9 @@ extension StatusBarController {
         return PaceInfo(
             elapsedRatio: elapsedRatio,
             usageRatio: usageRatio,
-            predictedFinalUsage: predictedFinalUsage
+            predictedFinalUsage: predictedFinalUsage,
+            remainingSeconds: remainingSeconds,
+            isExhausted: isExhausted
         )
     }
 
@@ -772,15 +801,30 @@ extension StatusBarController {
             calendar.timeZone = utc
         }
 
+        let remainingSeconds = resetDate.timeIntervalSince(now)
+        let isExhausted = usagePercent >= 100 && remainingSeconds > 0
+
         guard let billingStart = calendar.date(byAdding: DateComponents(month: -1), to: resetDate) else {
-            return PaceInfo(elapsedRatio: 0, usageRatio: usagePercent / 100.0, predictedFinalUsage: usagePercent)
+            return PaceInfo(
+                elapsedRatio: 0,
+                usageRatio: usagePercent / 100.0,
+                predictedFinalUsage: usagePercent,
+                remainingSeconds: remainingSeconds,
+                isExhausted: isExhausted
+            )
         }
 
         let totalSeconds = resetDate.timeIntervalSince(billingStart)
         let elapsedSeconds = now.timeIntervalSince(billingStart)
 
         guard totalSeconds > 0 else {
-            return PaceInfo(elapsedRatio: 0, usageRatio: usagePercent / 100.0, predictedFinalUsage: usagePercent)
+            return PaceInfo(
+                elapsedRatio: 0,
+                usageRatio: usagePercent / 100.0,
+                predictedFinalUsage: usagePercent,
+                remainingSeconds: remainingSeconds,
+                isExhausted: isExhausted
+            )
         }
 
         let elapsedRatio = max(0, min(1, elapsedSeconds / totalSeconds))
@@ -796,7 +840,9 @@ extension StatusBarController {
         return PaceInfo(
             elapsedRatio: elapsedRatio,
             usageRatio: usageRatio,
-            predictedFinalUsage: predictedFinalUsage
+            predictedFinalUsage: predictedFinalUsage,
+            remainingSeconds: remainingSeconds,
+            isExhausted: isExhausted
         )
     }
 
@@ -814,6 +860,14 @@ extension StatusBarController {
         let leftTextField = NSTextField(labelWithString: "Pace: \(paceInfo.statusText)")
         leftTextField.font = NSFont.systemFont(ofSize: fontSize)
         leftTextField.textColor = .secondaryLabelColor
+        leftTextField.lineBreakMode = .byTruncatingTail
+        leftTextField.maximumNumberOfLines = 1
+        leftTextField.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        if paceInfo.isExhausted {
+            leftTextField.stringValue = ""
+            leftTextField.isHidden = true
+            debugLog("createPaceView: hiding pace label for exhausted usage")
+        }
         leftTextField.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(leftTextField)
         NSLayoutConstraint.activate([
@@ -839,26 +893,56 @@ extension StatusBarController {
             dotImageView.contentTintColor = paceInfo.status.color
         }
         view.addSubview(dotImageView)
-        rightEdge -= (statusDotSize + 6)
+        let dotSpacing = MenuDesignToken.Spacing.trailingMargin - MenuDesignToken.Dimension.statusDotSize
+        rightEdge -= (statusDotSize + dotSpacing)
 
         let rightTextField = NSTextField(labelWithString: "")
         let rightAttributedString = NSMutableAttributedString()
-        rightAttributedString.append(NSAttributedString(
-            string: "Predict: ",
-            attributes: [.font: NSFont.systemFont(ofSize: fontSize), .foregroundColor: NSColor.disabledControlTextColor]
-        ))
-        rightAttributedString.append(NSAttributedString(
-            string: paceInfo.predictText,
-            attributes: [.font: NSFont.boldSystemFont(ofSize: fontSize), .foregroundColor: paceInfo.status.color]
-        ))
+        if paceInfo.isExhausted {
+            let waitText = formatRemainingTime(seconds: paceInfo.remainingSeconds)
+            debugLog("createPaceView: usage exhausted, showing wait message \(waitText)")
+            rightAttributedString.append(NSAttributedString(
+                string: "Status: ",
+                attributes: [.font: NSFont.systemFont(ofSize: fontSize), .foregroundColor: NSColor.disabledControlTextColor]
+            ))
+            rightAttributedString.append(NSAttributedString(
+                string: "Used Up",
+                attributes: [.font: NSFont.boldSystemFont(ofSize: fontSize), .foregroundColor: paceInfo.status.color]
+            ))
+            rightAttributedString.append(NSAttributedString(
+                string: " · Wait ",
+                attributes: [.font: NSFont.systemFont(ofSize: fontSize), .foregroundColor: NSColor.disabledControlTextColor]
+            ))
+            rightAttributedString.append(NSAttributedString(
+                string: waitText,
+                attributes: [.font: NSFont.boldSystemFont(ofSize: fontSize), .foregroundColor: paceInfo.status.color]
+            ))
+        } else {
+            rightAttributedString.append(NSAttributedString(
+                string: "Predict: ",
+                attributes: [.font: NSFont.systemFont(ofSize: fontSize), .foregroundColor: NSColor.disabledControlTextColor]
+            ))
+            rightAttributedString.append(NSAttributedString(
+                string: paceInfo.predictText,
+                attributes: [.font: NSFont.boldSystemFont(ofSize: fontSize), .foregroundColor: paceInfo.status.color]
+            ))
+        }
         rightTextField.attributedStringValue = rightAttributedString
         rightTextField.isBezeled = false
         rightTextField.isEditable = false
         rightTextField.isSelectable = false
         rightTextField.drawsBackground = false
-        rightTextField.sizeToFit()
-        rightTextField.frame = NSRect(x: rightEdge - rightTextField.frame.width, y: 3, width: rightTextField.frame.width, height: itemHeight - 6)
+        rightTextField.lineBreakMode = .byTruncatingTail
+        rightTextField.maximumNumberOfLines = 1
+        rightTextField.setContentCompressionResistancePriority(.required, for: .horizontal)
+        rightTextField.setContentHuggingPriority(.required, for: .horizontal)
+        rightTextField.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(rightTextField)
+        NSLayoutConstraint.activate([
+            rightTextField.trailingAnchor.constraint(equalTo: view.leadingAnchor, constant: rightEdge),
+            rightTextField.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+            leftTextField.trailingAnchor.constraint(lessThanOrEqualTo: rightTextField.leadingAnchor, constant: -dotSpacing)
+        ])
 
         return view
     }
@@ -892,4 +976,84 @@ extension StatusBarController {
 
         return view
     }
+
+    // MARK: - Shared UI Helpers for Unified Provider Menus
+
+    /// Creates unified usage window display with optional reset time and pace indicator.
+    /// Returns array of NSMenuItems: [usage row, reset row (optional), pace row (optional)]
+    func createUsageWindowRow(
+        label: String,
+        usagePercent: Double,
+        resetDate: Date? = nil,
+        windowHours: Int? = nil,
+        isMonthly: Bool = false
+    ) -> [NSMenuItem] {
+        var items: [NSMenuItem] = []
+
+        let usageItem = NSMenuItem()
+        usageItem.view = createDisabledLabelView(text: String(format: "%@: %.0f%% used", label, usagePercent))
+        items.append(usageItem)
+
+        if let resetDate = resetDate {
+            let formatter = DateFormatter()
+            formatter.dateFormat = "yyyy-MM-dd HH:mm zzz"
+            formatter.timeZone = TimeZone.current
+            let resetItem = NSMenuItem()
+            resetItem.view = createDisabledLabelView(text: "Resets: \(formatter.string(from: resetDate))", indent: MenuDesignToken.Spacing.submenuIndent)
+            items.append(resetItem)
+
+            let paceInfo: PaceInfo
+            if isMonthly {
+                paceInfo = calculateMonthlyPace(usagePercent: usagePercent, resetDate: resetDate)
+            } else if let windowHours = windowHours {
+                paceInfo = calculatePace(usage: usagePercent, resetTime: resetDate, windowHours: windowHours)
+            } else {
+                return items
+            }
+
+            let paceItem = NSMenuItem()
+            paceItem.view = createPaceView(paceInfo: paceInfo)
+            items.append(paceItem)
+        }
+
+        return items
+    }
+
+    /// Creates a "used/total" display row with optional unit prefix.
+    /// Example: "Tokens: 12,345 / 100,000", "Credits: $3.50 / $10.00"
+    func createLimitRow(label: String, used: Double, total: Double, unitPrefix: String = "") -> NSMenuItem {
+        let numberFormatter = NumberFormatter()
+        numberFormatter.numberStyle = .decimal
+        numberFormatter.maximumFractionDigits = 0
+
+        let formattedUsed = numberFormatter.string(from: NSNumber(value: used)) ?? "\(Int(used))"
+        let formattedTotal = numberFormatter.string(from: NSNumber(value: total)) ?? "\(Int(total))"
+
+        let item = NSMenuItem()
+        item.view = createDisabledLabelView(
+            text: "\(label): \(unitPrefix)\(formattedUsed) / \(unitPrefix)\(formattedTotal)"
+        )
+        return item
+    }
+
+    /// Creates unified account info section with SF Symbol icons.
+    /// Returns [separator, item1, item2, ...]. Enables multiline for "Token From:" items.
+    func createAccountInfoSection(items: [(sfSymbol: String, text: String)]) -> [NSMenuItem] {
+        var menuItems: [NSMenuItem] = []
+        menuItems.append(NSMenuItem.separator())
+
+        for item in items {
+            let menuItem = NSMenuItem()
+            let needsMultiline = item.text.hasPrefix("Token From:")
+            menuItem.view = createDisabledLabelView(
+                text: item.text,
+                icon: NSImage(systemSymbolName: item.sfSymbol, accessibilityDescription: nil),
+                multiline: needsMultiline
+            )
+            menuItems.append(menuItem)
+        }
+
+        return menuItems
+    }
+
 }
