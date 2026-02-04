@@ -23,7 +23,8 @@ struct GeminiUserInfoResponse: Codable {
 // MARK: - GeminiCLIProvider Implementation
 
 /// Provider for Google Gemini CLI quota tracking via cloudcode-pa.googleapis.com
-/// Uses OAuth token refresh from antigravity-accounts.json with fallback to OpenCode auth.json
+/// Uses OAuth token refresh from NoeFabris/opencode-antigravity-auth (antigravity-accounts.json)
+/// and jenslys/opencode-gemini-auth (OpenCode auth.json google.oauth).
 final class GeminiCLIProvider: ProviderProtocol {
     let identifier: ProviderIdentifier = .geminiCLI
     let type: ProviderType = .quotaBased
@@ -47,29 +48,53 @@ final class GeminiCLIProvider: ProviderProtocol {
         }
 
         if allAccounts.contains(where: { $0.source == .opencodeAuth }) {
-            logger.info("Gemini CLI: Using OpenCode auth.json fallback for Gemini OAuth")
+            logger.info("Gemini CLI: Using jenslys/opencode-gemini-auth (OpenCode auth.json google.oauth)")
         }
 
-        var geminiAccountQuotas: [GeminiAccountQuota] = []
-        var overallMinPercentage = 100.0
+        var candidates: [GeminiAccountCandidate] = []
 
         for account in allAccounts {
             do {
-                let quotaResult = try await fetchQuotaForAccount(
-                    account: account
-                )
-                geminiAccountQuotas.append(quotaResult)
-                overallMinPercentage = min(overallMinPercentage, quotaResult.remainingPercentage)
+                let quotaResult = try await fetchQuotaForAccount(account: account)
+                candidates.append(GeminiAccountCandidate(quota: quotaResult, source: account.source))
             } catch {
                 let displayEmail = account.email?.isEmpty == false ? account.email ?? "" : "unknown"
                 logger.warning("Failed to fetch quota for account #\(account.index + 1) (\(displayEmail)): \(error.localizedDescription)")
             }
         }
 
-        guard !geminiAccountQuotas.isEmpty else {
+        guard !candidates.isEmpty else {
             logger.error("Failed to fetch quota for any Gemini account")
             throw ProviderError.providerError("All account quota fetches failed")
         }
+
+        let deduped = CandidateDedupe.merge(
+            candidates,
+            accountId: { candidate in
+                let email = candidate.quota.email.trimmingCharacters(in: .whitespacesAndNewlines)
+                return email == "Unknown" || email.isEmpty ? nil : email
+            },
+            isSameUsage: { isSameUsage($0.quota, $1.quota) },
+            priority: { sourcePriority($0.source) }
+        )
+        let sorted = deduped.sorted { lhs, rhs in
+            sourcePriority(lhs.source) > sourcePriority(rhs.source)
+        }
+
+        let geminiAccountQuotas: [GeminiAccountQuota] = sorted.enumerated().map { index, candidate in
+            let quota = candidate.quota
+            return GeminiAccountQuota(
+                accountIndex: index,
+                email: quota.email,
+                remainingPercentage: quota.remainingPercentage,
+                modelBreakdown: quota.modelBreakdown,
+                authSource: quota.authSource,
+                earliestReset: quota.earliestReset,
+                modelResetTimes: quota.modelResetTimes
+            )
+        }
+
+        let overallMinPercentage = geminiAccountQuotas.map { $0.remainingPercentage }.min() ?? 100.0
 
         logger.info("Gemini CLI: Fetched quota for \(geminiAccountQuotas.count)/\(allAccounts.count) accounts, overall min: \(overallMinPercentage)%")
 
@@ -95,6 +120,38 @@ final class GeminiCLIProvider: ProviderProtocol {
         )
 
         return ProviderResult(usage: usage, details: details)
+    }
+
+    private struct GeminiAccountCandidate {
+        let quota: GeminiAccountQuota
+        let source: GeminiAuthSource
+    }
+
+    private func sourcePriority(_ source: GeminiAuthSource) -> Int {
+        switch source {
+        case .opencodeAuth:
+            return 2
+        case .antigravity:
+            return 1
+        }
+    }
+
+    private func isSameUsage(_ lhs: GeminiAccountQuota, _ rhs: GeminiAccountQuota) -> Bool {
+        let remainingMatch = lhs.remainingPercentage == rhs.remainingPercentage
+        let resetMatch = sameDate(lhs.earliestReset, rhs.earliestReset)
+        let modelsMatch = lhs.modelBreakdown == rhs.modelBreakdown
+        return remainingMatch && resetMatch && modelsMatch
+    }
+
+    private func sameDate(_ lhs: Date?, _ rhs: Date?) -> Bool {
+        switch (lhs, rhs) {
+        case (nil, nil):
+            return true
+        case let (left?, right?):
+            return Int(left.timeIntervalSince1970) == Int(right.timeIntervalSince1970)
+        default:
+            return false
+        }
     }
 
     // MARK: - Private Helpers

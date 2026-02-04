@@ -3,6 +3,25 @@ import Foundation
 struct ProviderResult {
     let usage: ProviderUsage
     let details: DetailedUsage?
+    let accounts: [ProviderAccountResult]?
+
+    init(
+        usage: ProviderUsage,
+        details: DetailedUsage?,
+        accounts: [ProviderAccountResult]? = nil
+    ) {
+        self.usage = usage
+        self.details = details
+        self.accounts = accounts
+    }
+}
+
+/// Per-account usage for providers that support multiple accounts
+struct ProviderAccountResult {
+    let accountIndex: Int
+    let accountId: String?
+    let usage: ProviderUsage
+    let details: DetailedUsage?
 }
 
 struct GeminiAccountQuota: Codable {
@@ -330,6 +349,39 @@ extension DetailedUsage: Codable {
         try container.encodeIfPresent(copilotUsedRequests, forKey: .copilotUsedRequests)
         try container.encodeIfPresent(copilotLimitRequests, forKey: .copilotLimitRequests)
         try container.encodeIfPresent(copilotQuotaResetDateUTC, forKey: .copilotQuotaResetDateUTC)
+    }
+}
+
+/// Shared helper for deduplicating multi-account provider candidates.
+struct CandidateDedupe {
+    static func merge<T>(
+        _ candidates: [T],
+        accountId: (T) -> String?,
+        isSameUsage: (T, T) -> Bool,
+        priority: (T) -> Int
+    ) -> [T] {
+        var results: [T] = []
+
+        for candidate in candidates {
+            if let candidateId = accountId(candidate),
+               let index = results.firstIndex(where: { accountId($0) == candidateId }) {
+                if priority(candidate) > priority(results[index]) {
+                    results[index] = candidate
+                }
+                continue
+            }
+
+            if let index = results.firstIndex(where: { isSameUsage($0, candidate) }) {
+                if priority(candidate) > priority(results[index]) {
+                    results[index] = candidate
+                }
+                continue
+            }
+
+            results.append(candidate)
+        }
+
+        return results
     }
 }
 
