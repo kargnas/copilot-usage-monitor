@@ -46,13 +46,13 @@ Download the latest `.dmg` file from the [**Releases**](https://github.com/opggi
 | **OpenRouter** | Pay-as-you-go | Credits balance, daily/weekly/monthly cost |
 | **OpenCode Zen** | Pay-as-you-go | Daily history (30 days), model breakdown |
 | **GitHub Copilot Add-on** | Pay-as-you-go | Usage-based billing after exceeding quota |
-| **Claude** | Quota-based | 5h/7d usage windows, Sonnet/Opus breakdown |
-| **Codex** | Quota-based | Primary/Secondary quotas, plan type |
+| **Claude** | Quota-based | 5h/7d usage windows, Sonnet/Opus breakdown, multi-account support |
+| **Codex** | Quota-based | Primary/Secondary quotas, plan type, multi-account support |
 | **Gemini CLI** | Quota-based | Per-model quotas, multi-account support |
 | **Kimi for Coding (Kimi K2.5)** | Quota-based | Usage limits, membership level, reset time |
 | **Z.AI Coding Plan** | Quota-based | Token/MCP quotas, model usage, tool usage (24h) |
 | **Antigravity** | Quota-based | Local language server monitoring |
-| **GitHub Copilot** | Quota-based | Daily history, overage tracking |
+| **GitHub Copilot** | Quota-based | Daily history, overage tracking, multi-account support |
 
 ### Custom Providers
 
