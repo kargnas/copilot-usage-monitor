@@ -172,6 +172,7 @@ jobs:
             fi
           else
             echo "CLI binary not found at $CLI_BIN"
+            exit 1
           fi
       
       - name: Re-sign App Bundle for Notarization
