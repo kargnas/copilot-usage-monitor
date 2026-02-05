@@ -19,7 +19,7 @@ Quota Status: $219/m
   Copilot (0%)               ▸
   Claude (0%, 100%)          ▸
   Kimi for Coding (0%, 51%)  ▸
-  ChatGPT (3%, 27%)          ▸
+  Codex (100%)               ▸
   Gemini CLI #1 (100%)       ▸
 ─────────────────────────────
 Predicted EOM: $451
@@ -108,41 +108,32 @@ Quit (⌘Q)
 - **Auth Source Labels**: Every provider MUST display where the auth token was detected
   - Format: `Token From: <path>` in submenu
   - Examples: `~/.local/share/opencode/auth.json`, `VS Code`, `Keychain`
+- **Dual-Percentage Display**: Providers with multiple usage windows show both
+  - Claude/Kimi: `Claude (5h%, 7d%)` format showing 5-hour and 7-day windows
+  - Example: `Claude (0%, 100%)` where 0% is 5h usage, 100% is 7d usage
+  - Each percentage is individually colored based on thresholds  
 
 ### Multi-Account Provider Rules (from PR #55)
 - **CandidateDedupe**: Use shared `CandidateDedupe.merge()` for deduplicating multi-account providers
 - **isReadableFile Check**: Always verify file readability before accessing auth files
   - Pattern: `FileManager.fileExists(atPath:)` AND `FileManager.isReadableFile(atPath:)`
 
-### Colored Usage Percentages
-- **Color Thresholds**: Usage percentages are colored based on severity
-  - `< 70%` → Normal text (secondary label color)
-  - `70-89%` → Orange (warning)
-  - `90%+` → Red (critical)
-  - `100%+` → Red + **Bold** (maxed out)
-- **Icon Tinting**: Provider icons are tinted to match the highest percentage color
-  - `70%+` → Orange icon
-  - `90%+` → Red icon
-- **Dual-Percentage Display**: Providers with multiple usage windows show both
-  - Claude/Kimi: `Claude (5h%, 7d%)` format showing 5-hour and 7-day windows
-  - Codex (ChatGPT): `ChatGPT (5h%, weekly%)` format showing primary and secondary windows
-  - Example: `Claude (0%, 100%)` where 0% is 5h usage, 100% is 7d usage
-  - Example: `ChatGPT #1 (OpenCode): 3%, 27%` where 3% is primary (5h), 27% is secondary (weekly)
-  - Each percentage is individually colored based on thresholds
+### Colored Usage Percentages in Menu
 - **Implementation Pattern**:
   ```swift
-  // Helper function for color thresholds
-  private func colorForUsagePercent(_ percent: Double) -> NSColor {
-      if percent >= 90 { return .systemRed }
-      else if percent >= 70 { return .systemOrange }
-      else { return .secondaryLabelColor }
-  }
-  
-  // Menu item with multiple percentages
-  private func createNativeQuotaMenuItem(name: String, usedPercents: [Double], icon: NSImage?) -> NSMenuItem {
-      // Build attributed string with individually colored percentages
-      // Format: "ProviderName (X%, Y%)" where each % has its own color
-  }
+  let attributed = NSMutableAttributedString()
+
+  attributed.append(NSAttributedString(
+      string: ": ",
+      attributes: [
+          .font: MenuDesignToken.Typography.defaultFont,
+          .foregroundColor: NSColor.secondaryLabelColor
+      ]
+  ))
+
+  let item = NSMenuItem()
+  item.attributedTitle = attributed
+  item.image = icon
   ```
 - **Warnings**:
   - **NEVER** use colors for text emphasis except for usage percentages (per UI Styling Rules)
