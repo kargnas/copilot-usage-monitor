@@ -1,6 +1,6 @@
 # AI Usage API Reference
 
-> AI usage API reference for OpenCode users
+> AI usage lookup API reference for OpenCode users
 
 ## Token Locations
 
@@ -290,7 +290,7 @@ Client Secret: Set GEMINI_CLIENT_SECRET environment variable
 
 ## Scripts
 
-Test scripts are in the `scripts/` directory:
+Test scripts are in the `scripts/` folder:
 
 | Script | Provider |
 |--------|----------|
