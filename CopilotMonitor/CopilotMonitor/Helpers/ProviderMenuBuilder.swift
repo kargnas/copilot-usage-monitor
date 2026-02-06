@@ -1,7 +1,7 @@
 import AppKit
 import Foundation
 
-struct GeminiGroupedUsageWindow {
+struct GroupedModelUsageWindow {
     let models: [String]
     let usedPercent: Double
     let resetDate: Date?
@@ -11,25 +11,28 @@ struct GeminiGroupedUsageWindow {
     }
 }
 
-enum GeminiModelUsageGrouper {
+enum ModelUsageGrouper {
     private struct GroupKey: Hashable {
         let remainingPercentBitPattern: UInt64
-        let resetEpochSecond: Int?
+        let resetEpochMillisecond: Int64?
+        // If reset time is missing, do not group models together (stricter and avoids false pooling).
+        let modelWhenNoReset: String?
     }
 
     static func groupedUsageWindows(
         modelBreakdown: [String: Double],
-        modelResetTimes: [String: Date]
-    ) -> [GeminiGroupedUsageWindow] {
+        modelResetTimes: [String: Date]? = nil
+    ) -> [GroupedModelUsageWindow] {
         var modelsByKey: [GroupKey: [String]] = [:]
         var groupDetailsByKey: [GroupKey: (remainingPercent: Double, resetDate: Date?)] = [:]
 
         for (model, remainingPercent) in modelBreakdown {
-            let resetDate = modelResetTimes[model]
+            let resetDate = modelResetTimes?[model]
             // Group only when quota usage and reset window are truly identical.
             let key = GroupKey(
                 remainingPercentBitPattern: remainingPercent.bitPattern,
-                resetEpochSecond: resetDate.map { Int($0.timeIntervalSince1970) }
+                resetEpochMillisecond: resetDate.map { Int64($0.timeIntervalSince1970 * 1000.0) },
+                modelWhenNoReset: resetDate == nil ? model : nil
             )
             modelsByKey[key, default: []].append(model)
             groupDetailsByKey[key] = (remainingPercent: remainingPercent, resetDate: resetDate)
@@ -42,7 +45,7 @@ enum GeminiModelUsageGrouper {
                 }
                 let detail = groupDetailsByKey[key]
                 let remainingPercent = detail?.remainingPercent ?? 100.0
-                return GeminiGroupedUsageWindow(
+                return GroupedModelUsageWindow(
                     models: sortedModels,
                     usedPercent: max(0.0, 100.0 - remainingPercent),
                     resetDate: detail?.resetDate
@@ -325,12 +328,13 @@ extension StatusBarController {
         case .geminiCLI:
             // modelBreakdown stores remaining% — convert to used% at display layer
             if let models = details.modelBreakdown, !models.isEmpty {
-                for (model, remainingPercent) in models.sorted(by: { $0.key < $1.key }) {
-                    let usedPercent = 100 - remainingPercent
-                    let item = NSMenuItem()
-                    item.view = createDisabledLabelView(text: String(format: "%@: %.0f%% used", model, usedPercent))
-                    submenu.addItem(item)
-                }
+                addGroupedModelUsageSection(
+                    to: submenu,
+                    modelBreakdown: models,
+                    modelResetTimes: details.modelResetTimes,
+                    paceWindowHours: 24,
+                    debugContext: "createDetailSubmenu(gemini_cli \(details.email ?? "unknown"))"
+                )
             }
             if let email = details.email {
                 submenu.addItem(NSMenuItem.separator())
@@ -347,12 +351,13 @@ extension StatusBarController {
         case .antigravity:
             // modelBreakdown stores remaining% — convert to used% at display layer
             if let models = details.modelBreakdown, !models.isEmpty {
-                for (model, remainingPercent) in models.sorted(by: { $0.key < $1.key }) {
-                    let usedPercent = 100 - remainingPercent
-                    let item = NSMenuItem()
-                    item.view = createDisabledLabelView(text: String(format: "%@: %.0f%% used", model, usedPercent))
-                    submenu.addItem(item)
-                }
+                addGroupedModelUsageSection(
+                    to: submenu,
+                    modelBreakdown: models,
+                    modelResetTimes: details.modelResetTimes,
+                    paceWindowHours: 24,
+                    debugContext: "createDetailSubmenu(antigravity \(details.email ?? "unknown"))"
+                )
             }
 
             var accountItems: [(sfSymbol: String, text: String)] = []
@@ -610,20 +615,33 @@ extension StatusBarController {
         return submenu
     }
 
-    func createGeminiAccountSubmenu(_ account: GeminiAccountQuota) -> NSMenu {
-        let submenu = NSMenu()
+    private func addHorizontalDivider(to submenu: NSMenu) {
+        submenu.addItem(NSMenuItem.separator())
+    }
 
-        let groupedUsageWindows = GeminiModelUsageGrouper.groupedUsageWindows(
-            modelBreakdown: account.modelBreakdown,
-            modelResetTimes: account.modelResetTimes
+    private func addGroupedModelUsageSection(
+        to submenu: NSMenu,
+        modelBreakdown: [String: Double],
+        modelResetTimes: [String: Date]?,
+        paceWindowHours: Int,
+        debugContext: String
+    ) {
+        let groupedUsageWindows = ModelUsageGrouper.groupedUsageWindows(
+            modelBreakdown: modelBreakdown,
+            modelResetTimes: modelResetTimes
         )
+
         debugLog(
-            "createGeminiAccountSubmenu: grouped \(account.modelBreakdown.count) model buckets into \(groupedUsageWindows.count) rows for \(account.email)"
+            "\(debugContext): grouped \(modelBreakdown.count) model bucket(s) into \(groupedUsageWindows.count) group(s)"
         )
+
+        let didGroup = groupedUsageWindows.count < modelBreakdown.count
+        let dividerCount = didGroup ? max(0, groupedUsageWindows.count - 1) : 0
+        debugLog("\(debugContext): adding \(dividerCount) divider(s) between model groups")
 
         // Keep one model per row to avoid long wrapped labels while still sharing reset/pace
         // for groups that have the same usage and quota reset window.
-        for grouped in groupedUsageWindows {
+        for (groupIndex, grouped) in groupedUsageWindows.enumerated() {
             for model in grouped.models {
                 let usageItem = NSMenuItem()
                 usageItem.view = createDisabledLabelView(
@@ -632,24 +650,40 @@ extension StatusBarController {
                 submenu.addItem(usageItem)
             }
 
-            guard let resetDate = grouped.resetDate else { continue }
+            if let resetDate = grouped.resetDate {
+                let formatter = DateFormatter()
+                formatter.dateFormat = "yyyy-MM-dd HH:mm zzz"
+                formatter.timeZone = TimeZone.current
 
-            let formatter = DateFormatter()
-            formatter.dateFormat = "yyyy-MM-dd HH:mm zzz"
-            formatter.timeZone = TimeZone.current
+                let resetItem = NSMenuItem()
+                resetItem.view = createDisabledLabelView(
+                    text: "Resets: \(formatter.string(from: resetDate))",
+                    indent: MenuDesignToken.Spacing.submenuIndent
+                )
+                submenu.addItem(resetItem)
 
-            let resetItem = NSMenuItem()
-            resetItem.view = createDisabledLabelView(
-                text: "Resets: \(formatter.string(from: resetDate))",
-                indent: MenuDesignToken.Spacing.submenuIndent
-            )
-            submenu.addItem(resetItem)
+                let paceInfo = calculatePace(usage: grouped.usedPercent, resetTime: resetDate, windowHours: paceWindowHours)
+                let paceItem = NSMenuItem()
+                paceItem.view = createPaceView(paceInfo: paceInfo)
+                submenu.addItem(paceItem)
+            }
 
-            let paceInfo = calculatePace(usage: grouped.usedPercent, resetTime: resetDate, windowHours: 24)
-            let paceItem = NSMenuItem()
-            paceItem.view = createPaceView(paceInfo: paceInfo)
-            submenu.addItem(paceItem)
+            if didGroup, groupIndex < groupedUsageWindows.count - 1 {
+                addHorizontalDivider(to: submenu)
+            }
         }
+    }
+
+    func createGeminiAccountSubmenu(_ account: GeminiAccountQuota) -> NSMenu {
+        let submenu = NSMenu()
+
+        addGroupedModelUsageSection(
+            to: submenu,
+            modelBreakdown: account.modelBreakdown,
+            modelResetTimes: account.modelResetTimes,
+            paceWindowHours: 24,
+            debugContext: "createGeminiAccountSubmenu(\(account.email))"
+        )
 
         let accountItems: [(sfSymbol: String, text: String)] = [
             (sfSymbol: "person.circle", text: "Email: \(account.email)"),

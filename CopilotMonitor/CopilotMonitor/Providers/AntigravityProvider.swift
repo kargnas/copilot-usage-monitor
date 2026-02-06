@@ -277,7 +277,14 @@ final class AntigravityProvider: ProviderProtocol {
 
         // Calculate remaining percentages for each model
         var modelBreakdown: [String: Double] = [:]
+        var modelResetTimes: [String: Date] = [:]
         var remainingPercentages: [Double] = []
+        var parsedResetCount = 0
+
+        let iso8601Formatter = ISO8601DateFormatter()
+        iso8601Formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let iso8601FormatterNoFrac = ISO8601DateFormatter()
+        iso8601FormatterNoFrac.formatOptions = [.withInternetDateTime]
 
         for config in modelConfigs {
             guard let quotaInfo = config.quotaInfo else { continue }
@@ -290,6 +297,19 @@ final class AntigravityProvider: ProviderProtocol {
             remainingPercentages.append(remainingPercent)
 
             logger.debug("Model \(config.label): \(String(format: "%.1f", remainingPercent))% remaining")
+
+            let resetTime = quotaInfo.resetTime?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            if !resetTime.isEmpty,
+               let resetDate = iso8601Formatter.date(from: resetTime) ?? iso8601FormatterNoFrac.date(from: resetTime) {
+                modelResetTimes[config.label] = resetDate
+                parsedResetCount += 1
+            }
+        }
+
+        if parsedResetCount > 0 {
+            logger.info("Antigravity: Parsed reset times for \(parsedResetCount)/\(modelBreakdown.count) model(s)")
+        } else {
+            logger.info("Antigravity: No model reset times parsed (showing ungrouped model usage)")
         }
 
         // Use minimum remaining percentage across all models
@@ -300,6 +320,7 @@ final class AntigravityProvider: ProviderProtocol {
         // Build detailed usage
         let details = DetailedUsage(
             modelBreakdown: modelBreakdown,
+            modelResetTimes: modelResetTimes.isEmpty ? nil : modelResetTimes,
             planType: plan,
             email: email,
             authSource: "Antigravity Local Server (localhost)"
