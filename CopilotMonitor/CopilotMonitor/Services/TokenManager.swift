@@ -215,6 +215,23 @@ struct OpenCodeAuth: Codable {
         zaiCodingPlan = Self.decodeLossyIfPresent(APIKey.self, from: container, forKey: .zaiCodingPlan)
         synthetic = Self.decodeLossyIfPresent(APIKey.self, from: container, forKey: .synthetic)
         chutes = Self.decodeLossyIfPresent(APIKey.self, from: container, forKey: .chutes)
+
+        if anthropic == nil,
+           openai == nil,
+           githubCopilot == nil,
+           openrouter == nil,
+           opencode == nil,
+           kimiForCoding == nil,
+           zaiCodingPlan == nil,
+           synthetic == nil,
+           chutes == nil {
+            throw DecodingError.dataCorrupted(
+                DecodingError.Context(
+                    codingPath: container.codingPath,
+                    debugDescription: "No valid auth entries found in auth.json"
+                )
+            )
+        }
     }
 
     private static func decodeLossyIfPresent<T: Decodable>(
