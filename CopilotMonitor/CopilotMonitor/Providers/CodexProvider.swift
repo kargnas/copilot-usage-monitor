@@ -103,8 +103,10 @@ final class CodexProvider: ProviderProtocol {
         switch source {
         case .opencodeAuth:
             return 2
-        case .codexAuth:
+        case .codexLB:
             return 1
+        case .codexAuth:
+            return 0
         }
     }
 
@@ -176,10 +178,11 @@ final class CodexProvider: ProviderProtocol {
             primaryReset: primaryResetDate,
             creditsBalance: codexResponse.credits?.balanceAsDouble,
             planType: codexResponse.plan_type,
+            email: account.email,
             authSource: account.authSource
         )
 
-        logger.info("Codex usage fetched (\(account.authSource)): primary=\(primaryUsedPercent)%, secondary=\(secondaryUsedPercent)%, plan=\(codexResponse.plan_type ?? "unknown")")
+        logger.info("Codex usage fetched (\(account.authSource)): email=\(account.email ?? "unknown"), primary=\(primaryUsedPercent)%, secondary=\(secondaryUsedPercent)%, plan=\(codexResponse.plan_type ?? "unknown")")
 
         let usage = ProviderUsage.quotaBased(remaining: remaining, entitlement: 100, overagePermitted: false)
         return CodexAccountCandidate(

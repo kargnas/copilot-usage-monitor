@@ -360,6 +360,15 @@ extension StatusBarController {
                 item.view = createDisabledLabelView(text: String(format: "Credits: $%.2f", credits))
                 submenu.addItem(item)
             }
+            let codexEmail = details.email ?? codexEmail(for: accountId)
+            if let email = codexEmail {
+                let item = NSMenuItem()
+                item.view = createDisabledLabelView(
+                    text: "Email: \(email)",
+                    icon: NSImage(systemSymbolName: "person.circle", accessibilityDescription: "User Email")
+                )
+                submenu.addItem(item)
+            }
 
             // === Subscription ===
             addSubscriptionItems(to: submenu, provider: .codex, accountId: accountId)
@@ -659,6 +668,17 @@ extension StatusBarController {
 
     private func addHorizontalDivider(to submenu: NSMenu) {
         submenu.addItem(NSMenuItem.separator())
+    }
+
+    private func codexEmail(for accountId: String?) -> String? {
+        guard let accountId = accountId?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !accountId.isEmpty else {
+            return nil
+        }
+
+        return TokenManager.shared.getOpenAIAccounts().first { account in
+            account.accountId == accountId
+        }?.email
     }
 
     private func addGroupedModelUsageSection(

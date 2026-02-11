@@ -934,10 +934,57 @@ final class StatusBarController: NSObject {
                     )
                     let showAuthLabel = authLabels.count > 1
                     let baseName = multiAccountBaseName(for: identifier)
+                    let codexEmailByAccountId: [String: String]
+                    if identifier == .codex {
+                        codexEmailByAccountId = Dictionary(
+                            uniqueKeysWithValues: TokenManager.shared.getOpenAIAccounts().compactMap { account in
+                                guard let accountId = account.accountId?
+                                    .trimmingCharacters(in: .whitespacesAndNewlines),
+                                      !accountId.isEmpty,
+                                      let email = account.email?
+                                    .trimmingCharacters(in: .whitespacesAndNewlines),
+                                      !email.isEmpty else {
+                                    return nil
+                                }
+                                return (accountId, email)
+                            }
+                        )
+                    } else {
+                        codexEmailByAccountId = [:]
+                    }
                     for account in accounts {
                         hasQuota = true
                         var displayName = accounts.count > 1 ? "\(baseName) #\(account.accountIndex + 1)" : baseName
-                        if accounts.count > 1, showAuthLabel {
+
+                        let codexEmail: String?
+                        if identifier == .codex,
+                           let detailsEmail = account.details?.email?
+                            .trimmingCharacters(in: .whitespacesAndNewlines),
+                           !detailsEmail.isEmpty {
+                            codexEmail = detailsEmail
+                        } else if identifier == .codex,
+                                  let accountId = account.accountId?
+                            .trimmingCharacters(in: .whitespacesAndNewlines),
+                                  !accountId.isEmpty,
+                                  let mappedEmail = codexEmailByAccountId[accountId],
+                                  !mappedEmail.isEmpty {
+                            codexEmail = mappedEmail
+                        } else if identifier == .codex,
+                                  let fallbackEmail = codexEmailByAccountId.values.first,
+                                  accounts.count == 1 {
+                            // Single-account fallback for legacy cached results that may miss accountId.
+                            codexEmail = fallbackEmail
+                        } else {
+                            codexEmail = nil
+                        }
+
+                        if let codexEmail {
+                            if accounts.count > 1 {
+                                displayName += " (\(codexEmail))"
+                            } else {
+                                displayName = "\(baseName) (\(codexEmail))"
+                            }
+                        } else if accounts.count > 1, showAuthLabel {
                             let sourceLabel = authSourceLabel(for: account.details?.authSource, provider: identifier) ?? "Unknown"
                             displayName += " (\(sourceLabel))"
                         }
@@ -1200,6 +1247,9 @@ final class StatusBarController: NSObject {
 
         switch provider {
         case .codex:
+            if lowercased.contains(".codex-lb") || lowercased.contains("/codex-lb/") {
+                return "Codex LB"
+            }
             if lowercased.contains(".codex") || lowercased.contains("/codex/") {
                 return "Codex"
             }
