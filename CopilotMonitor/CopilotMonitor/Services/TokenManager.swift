@@ -315,6 +315,7 @@ struct OpenAIAuthAccount {
     let accountId: String?
     let email: String?
     let authSource: String
+    let sourceLabels: [String]
     let source: OpenAIAuthSource
 }
 
@@ -332,6 +333,7 @@ struct ClaudeAuthAccount {
     let accountId: String?
     let email: String?
     let authSource: String
+    let sourceLabels: [String]
     let source: ClaudeAuthSource
 }
 
@@ -362,14 +364,17 @@ struct CopilotPlanInfo {
 /// Antigravity Accounts structure for NoeFabris/opencode-antigravity-auth (~/.config/opencode/antigravity-accounts.json)
 struct AntigravityAccounts: Codable {
     struct Account: Codable {
-        let email: String
-        let refreshToken: String
-        let projectId: String
+        let email: String?
+        let refreshToken: String?
+        let projectId: String?
+        let managedProjectId: String?
+        let enabled: Bool?
     }
 
-    let version: Int
+    let version: Int?
     let accounts: [Account]
-    let activeIndex: Int
+    let activeIndex: Int?
+    let activeIndexByFamily: [String: Int]?
 }
 
 /// Auth source types for Gemini CLI token discovery
@@ -387,6 +392,7 @@ struct GeminiAuthAccount {
     let refreshToken: String
     let projectId: String
     let authSource: String
+    let sourceLabels: [String]
     let clientId: String
     let clientSecret: String
     let source: GeminiAuthSource
@@ -990,6 +996,7 @@ final class TokenManager: @unchecked Sendable {
                                     accountId: normalizedAccountId?.isEmpty == true ? nil : normalizedAccountId,
                                     email: normalizedEmail?.isEmpty == true ? nil : normalizedEmail,
                                     authSource: candidate.databaseURL.path,
+                                    sourceLabels: [openAISourceLabel(for: .codexLB)],
                                     source: .codexLB
                                 )
                             )
@@ -1033,6 +1040,49 @@ final class TokenManager: @unchecked Sendable {
             lastFoundCodexLBKeyPath = nil
             return []
         }
+    }
+
+    private func openAISourceLabel(for source: OpenAIAuthSource) -> String {
+        switch source {
+        case .opencodeAuth:
+            return "OpenCode"
+        case .codexLB:
+            return "Codex LB"
+        case .codexAuth:
+            return "Codex"
+        }
+    }
+
+    private func claudeSourceLabel(for source: ClaudeAuthSource) -> String {
+        switch source {
+        case .opencodeAuth:
+            return "OpenCode"
+        case .claudeCodeConfig:
+            return "Claude Code"
+        case .claudeCodeKeychain:
+            return "Claude Code (Keychain)"
+        case .claudeLegacyCredentials:
+            return "Claude Code (Legacy)"
+        }
+    }
+
+    private func geminiSourceLabel(for source: GeminiAuthSource) -> String {
+        switch source {
+        case .opencodeAuth:
+            return "OpenCode"
+        case .antigravity:
+            return "Antigravity"
+        }
+    }
+
+    private func mergeSourceLabels(_ primary: [String], _ fallback: [String]) -> [String] {
+        var merged: [String] = []
+        for label in primary + fallback {
+            let trimmed = label.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty, !merged.contains(trimmed) else { continue }
+            merged.append(trimmed)
+        }
+        return merged
     }
 
     private func dedupeOpenAIAccounts(_ accounts: [OpenAIAuthAccount]) -> [OpenAIAuthAccount] {
@@ -1086,12 +1136,14 @@ final class TokenManager: @unchecked Sendable {
             .trimmingCharacters(in: .whitespacesAndNewlines)
         let fallbackEmail = fallback.email?
             .trimmingCharacters(in: .whitespacesAndNewlines)
+        let mergedSourceLabels = mergeSourceLabels(primary.sourceLabels, fallback.sourceLabels)
 
         return OpenAIAuthAccount(
             accessToken: primary.accessToken,
             accountId: (primaryAccountId?.isEmpty == false) ? primaryAccountId : fallbackAccountId,
             email: (primaryEmail?.isEmpty == false) ? primaryEmail : fallbackEmail,
             authSource: primary.authSource,
+            sourceLabels: mergedSourceLabels,
             source: primary.source
         )
     }
@@ -1235,6 +1287,9 @@ final class TokenManager: @unchecked Sendable {
                 antigravityCacheTimestamp = Date()
                 logger.info("Successfully loaded Antigravity accounts")
                 return accounts
+            } catch let decodingError as DecodingError {
+                logger.error("Failed to decode Antigravity accounts: \(String(describing: decodingError))")
+                return nil
             } catch {
                 logger.error("Failed to read Antigravity accounts: \(error.localizedDescription)")
                 return nil
@@ -1279,6 +1334,7 @@ final class TokenManager: @unchecked Sendable {
                     accountId: accountId,
                     email: email,
                     authSource: path.path,
+                    sourceLabels: [claudeSourceLabel(for: source)],
                     source: source
                 )
             )
@@ -1312,6 +1368,7 @@ final class TokenManager: @unchecked Sendable {
                     accountId: accountId,
                     email: email,
                     authSource: "Keychain (\(service))",
+                    sourceLabels: [claudeSourceLabel(for: .claudeCodeKeychain)],
                     source: .claudeCodeKeychain
                 )
             )
@@ -1344,6 +1401,7 @@ final class TokenManager: @unchecked Sendable {
                     accountId: auth.anthropic?.accountId,
                     email: nil,
                     authSource: authSource,
+                    sourceLabels: [claudeSourceLabel(for: .opencodeAuth)],
                     source: .opencodeAuth
                 )
             )
@@ -1374,14 +1432,41 @@ final class TokenManager: @unchecked Sendable {
         var byToken: [String: ClaudeAuthAccount] = [:]
         for account in accounts {
             if let existing = byToken[account.accessToken] {
-                if priority(for: account.source) > priority(for: existing.source) {
-                    byToken[account.accessToken] = account
+                let accountPriority = priority(for: account.source)
+                let existingPriority = priority(for: existing.source)
+                if accountPriority > existingPriority {
+                    byToken[account.accessToken] = mergeClaudeAccount(primary: account, fallback: existing)
+                } else if existingPriority > accountPriority {
+                    byToken[account.accessToken] = mergeClaudeAccount(primary: existing, fallback: account)
+                } else {
+                    byToken[account.accessToken] = mergeClaudeAccount(primary: existing, fallback: account)
                 }
             } else {
                 byToken[account.accessToken] = account
             }
         }
         return Array(byToken.values)
+    }
+
+    private func mergeClaudeAccount(primary: ClaudeAuthAccount, fallback: ClaudeAuthAccount) -> ClaudeAuthAccount {
+        let primaryAccountId = primary.accountId?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let fallbackAccountId = fallback.accountId?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let primaryEmail = primary.email?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let fallbackEmail = fallback.email?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let mergedSourceLabels = mergeSourceLabels(primary.sourceLabels, fallback.sourceLabels)
+
+        return ClaudeAuthAccount(
+            accessToken: primary.accessToken,
+            accountId: (primaryAccountId?.isEmpty == false) ? primaryAccountId : fallbackAccountId,
+            email: (primaryEmail?.isEmpty == false) ? primaryEmail : fallbackEmail,
+            authSource: primary.authSource,
+            sourceLabels: mergedSourceLabels,
+            source: primary.source
+        )
     }
 
     // MARK: - GitHub Copilot Token Discovery
@@ -1542,6 +1627,7 @@ final class TokenManager: @unchecked Sendable {
                     accountId: auth.openai?.accountId,
                     email: nil,
                     authSource: authSource,
+                    sourceLabels: [openAISourceLabel(for: .opencodeAuth)],
                     source: .opencodeAuth
                 )
             )
@@ -1566,6 +1652,7 @@ final class TokenManager: @unchecked Sendable {
                     accountId: codexAuth.tokens?.accountId,
                     email: nil,
                     authSource: authSource,
+                    sourceLabels: [openAISourceLabel(for: .codexAuth)],
                     source: .codexAuth
                 )
             )
@@ -1882,6 +1969,7 @@ final class TokenManager: @unchecked Sendable {
                         refreshToken: parts.refreshToken,
                         projectId: projectId,
                         authSource: authSource,
+                        sourceLabels: [geminiSourceLabel(for: .opencodeAuth)],
                         clientId: TokenManager.geminiAuthPluginClientId,
                         clientSecret: TokenManager.geminiAuthPluginClientSecret,
                         source: .opencodeAuth
@@ -1894,13 +1982,39 @@ final class TokenManager: @unchecked Sendable {
 
         if let antigravity = readAntigravityAccounts(), !antigravity.accounts.isEmpty {
             let authSource = antigravityAccountsPath().path
-            let antigravityAccounts = antigravity.accounts.enumerated().map { index, account in
-                GeminiAuthAccount(
+            let antigravityAccounts = antigravity.accounts.enumerated().compactMap { index, account -> GeminiAuthAccount? in
+                if account.enabled == false {
+                    logger.info("Skipping disabled Antigravity account at index \(index)")
+                    return nil
+                }
+
+                let refreshToken = account.refreshToken?
+                    .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                if refreshToken.isEmpty {
+                    logger.warning("Skipping Antigravity account at index \(index): missing refresh token")
+                    return nil
+                }
+
+                let primaryProjectId = account.projectId?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                let fallbackProjectId = account.managedProjectId?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                let projectId = primaryProjectId.isEmpty ? fallbackProjectId : primaryProjectId
+                if projectId.isEmpty {
+                    logger.warning("Skipping Antigravity account at index \(index): missing project ID")
+                    return nil
+                }
+
+                let normalizedEmail: String? = {
+                    let value = account.email?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                    return value.isEmpty ? nil : value
+                }()
+
+                return GeminiAuthAccount(
                     index: index,
-                    email: account.email,
-                    refreshToken: account.refreshToken,
-                    projectId: account.projectId,
+                    email: normalizedEmail,
+                    refreshToken: refreshToken,
+                    projectId: projectId,
                     authSource: authSource,
+                    sourceLabels: [geminiSourceLabel(for: .antigravity)],
                     clientId: TokenManager.geminiClientId,
                     clientSecret: TokenManager.geminiClientSecret,
                     source: .antigravity
@@ -1920,6 +2034,7 @@ final class TokenManager: @unchecked Sendable {
                 refreshToken: account.refreshToken,
                 projectId: account.projectId,
                 authSource: account.authSource,
+                sourceLabels: account.sourceLabels,
                 clientId: account.clientId,
                 clientSecret: account.clientSecret,
                 source: account.source
@@ -2310,8 +2425,14 @@ final class TokenManager: @unchecked Sendable {
 
         // 4. Antigravity accounts
         if let accounts = readAntigravityAccounts() {
-            let invalidMarker = accounts.activeIndex < 0 || accounts.activeIndex >= accounts.accounts.count ? " (INVALID)" : ""
-            debugLines.append("  [Antigravity] \(accounts.accounts.count) account(s), active index: \(accounts.activeIndex)\(invalidMarker)")
+            let activeIndexText: String
+            if let activeIndex = accounts.activeIndex {
+                let invalidMarker = activeIndex < 0 || activeIndex >= accounts.accounts.count ? " (INVALID)" : ""
+                activeIndexText = "\(activeIndex)\(invalidMarker)"
+            } else {
+                activeIndexText = "n/a"
+            }
+            debugLines.append("  [Antigravity] \(accounts.accounts.count) account(s), active index: \(activeIndexText)")
         } else {
             debugLines.append("  [Antigravity] NOT CONFIGURED")
         }
@@ -2597,12 +2718,13 @@ final class TokenManager: @unchecked Sendable {
         // 6. Antigravity accounts
         if let accounts = readAntigravityAccounts() {
             debugLines.append("[Antigravity Accounts] \(accounts.accounts.count) account(s)")
-            debugLines.append("  - Active Index: \(accounts.activeIndex)")
+            debugLines.append("  - Active Index: \(accounts.activeIndex.map { String($0) } ?? "n/a")")
             for (index, account) in accounts.accounts.enumerated() {
                 let activeMarker = index == accounts.activeIndex ? " (ACTIVE)" : ""
-                debugLines.append("  - [\(index)] \(account.email)\(activeMarker)")
-                debugLines.append("    - Refresh Token: \(account.refreshToken.count) chars")
-                debugLines.append("    - Project ID: \(account.projectId)")
+                debugLines.append("  - [\(index)] \(account.email ?? "unknown")\(activeMarker)")
+                debugLines.append("    - Enabled: \(account.enabled == false ? "NO" : "YES")")
+                debugLines.append("    - Refresh Token: \(account.refreshToken?.count ?? 0) chars")
+                debugLines.append("    - Project ID: \(account.projectId ?? account.managedProjectId ?? "missing")")
             }
         } else {
             debugLines.append("[Antigravity Accounts] NOT FOUND or PARSE FAILED")

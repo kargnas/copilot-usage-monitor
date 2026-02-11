@@ -663,6 +663,18 @@ extension StatusBarController {
             submenu.addItem(authItem)
         }
 
+        if let authUsageSummary = details.authUsageSummary, !authUsageSummary.isEmpty {
+            if details.authSource == nil {
+                submenu.addItem(NSMenuItem.separator())
+            }
+            let usageItem = NSMenuItem()
+            usageItem.view = createDisabledLabelView(
+                text: "Using in: \(authUsageSummary)",
+                icon: NSImage(systemSymbolName: "arrow.triangle.branch", accessibilityDescription: "Auth Usage")
+            )
+            submenu.addItem(usageItem)
+        }
+
         return submenu
     }
 
@@ -758,10 +770,13 @@ extension StatusBarController {
             debugContext: "createGeminiAccountSubmenu(\(account.email))"
         )
 
-        let accountItems: [(sfSymbol: String, text: String)] = [
+        var accountItems: [(sfSymbol: String, text: String)] = [
             (sfSymbol: "person.circle", text: "Email: \(account.email)"),
             (sfSymbol: "key", text: "Token From: \(account.authSource)")
         ]
+        if let authUsageSummary = account.authUsageSummary, !authUsageSummary.isEmpty {
+            accountItems.append((sfSymbol: "arrow.triangle.branch", text: "Using in: \(authUsageSummary)"))
+        }
         createAccountInfoSection(items: accountItems).forEach { submenu.addItem($0) }
 
         addSubscriptionItems(to: submenu, provider: .geminiCLI, accountId: account.email)
