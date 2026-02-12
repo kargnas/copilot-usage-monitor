@@ -94,7 +94,8 @@ final class ClaudeProvider: ProviderProtocol {
             candidates,
             accountId: { $0.accountId },
             isSameUsage: isSameUsage,
-            priority: { sourcePriority($0.source) }
+            priority: { sourcePriority($0.source) },
+            mergeCandidates: mergeCandidates
         )
         let sorted = merged.sorted { lhs, rhs in
             sourcePriority(lhs.source) > sourcePriority(rhs.source)
@@ -123,6 +124,7 @@ final class ClaudeProvider: ProviderProtocol {
         let accountId: String?
         let usage: ProviderUsage
         let details: DetailedUsage
+        let sourceLabels: [String]
         let source: ClaudeAuthSource
     }
 
@@ -137,6 +139,54 @@ final class ClaudeProvider: ProviderProtocol {
         case .claudeLegacyCredentials:
             return 0
         }
+    }
+
+    private func sourceLabel(_ source: ClaudeAuthSource) -> String {
+        switch source {
+        case .opencodeAuth:
+            return "OpenCode"
+        case .claudeCodeKeychain:
+            return "Claude Code (Keychain)"
+        case .claudeCodeConfig:
+            return "Claude Code"
+        case .claudeLegacyCredentials:
+            return "Claude Code (Legacy)"
+        }
+    }
+
+    private func mergeSourceLabels(_ primary: [String], _ secondary: [String]) -> [String] {
+        var merged: [String] = []
+        for label in primary + secondary {
+            let trimmed = label.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty, !merged.contains(trimmed) else { continue }
+            merged.append(trimmed)
+        }
+        return merged
+    }
+
+    private func sourceSummary(_ labels: [String], fallback: String) -> String {
+        let merged = mergeSourceLabels(labels, [])
+        if merged.isEmpty {
+            return fallback
+        }
+        if merged.count == 1, let first = merged.first {
+            return first
+        }
+        return merged.joined(separator: " + ")
+    }
+
+    private func mergeCandidates(primary: ClaudeAccountCandidate, secondary: ClaudeAccountCandidate) -> ClaudeAccountCandidate {
+        let mergedLabels = mergeSourceLabels(primary.sourceLabels, secondary.sourceLabels)
+        var mergedDetails = primary.details
+        mergedDetails.authUsageSummary = sourceSummary(mergedLabels, fallback: "Unknown")
+
+        return ClaudeAccountCandidate(
+            accountId: primary.accountId,
+            usage: primary.usage,
+            details: mergedDetails,
+            sourceLabels: mergedLabels,
+            source: primary.source
+        )
     }
 
     private func fetchUsageForAccount(_ account: ClaudeAuthAccount) async throws -> ClaudeAccountCandidate {
@@ -205,13 +255,16 @@ final class ClaudeProvider: ProviderProtocol {
             let extraUsageUsedCredits = response.extra_usage?.used_credits
             let extraUsageUtilizationPercent = response.extra_usage?.utilization
 
-            logger.info("Claude usage fetched (\(account.authSource)): 7d=\(utilization)%, 5h=\(fiveHourUsage?.description ?? "N/A")%")
+            let sourceLabels = account.sourceLabels.isEmpty ? [sourceLabel(account.source)] : account.sourceLabels
+            let authUsageSummary = sourceSummary(sourceLabels, fallback: "Unknown")
+
+            logger.info("Claude usage fetched (\(authUsageSummary)): 7d=\(utilization)%, 5h=\(fiveHourUsage?.description ?? "N/A")%")
 
             if let extraUsageEnabled {
                 let limitUSD = (extraUsageMonthlyLimitCredits ?? 0) / 100.0
                 let usedUSD = (extraUsageUsedCredits ?? 0) / 100.0
                 logger.info(
-                    "Claude extra usage (\(account.authSource)): enabled=\(extraUsageEnabled), limit=$\(String(format: "%.2f", limitUSD)), used=$\(String(format: "%.2f", usedUSD)), utilization=\(extraUsageUtilizationPercent?.description ?? "nil")"
+                    "Claude extra usage (\(authUsageSummary)): enabled=\(extraUsageEnabled), limit=$\(String(format: "%.2f", limitUSD)), used=$\(String(format: "%.2f", usedUSD)), utilization=\(extraUsageUtilizationPercent?.description ?? "nil")"
                 )
             }
 
@@ -234,13 +287,15 @@ final class ClaudeProvider: ProviderProtocol {
                 extraUsageMonthlyLimitUSD: extraUsageMonthlyLimitCredits.map { $0 / 100.0 },
                 extraUsageUsedUSD: extraUsageUsedCredits.map { $0 / 100.0 },
                 extraUsageUtilizationPercent: extraUsageUtilizationPercent,
-                authSource: account.authSource
+                authSource: account.authSource,
+                authUsageSummary: authUsageSummary
             )
 
             return ClaudeAccountCandidate(
                 accountId: account.accountId ?? account.email,
                 usage: usage,
                 details: details,
+                sourceLabels: sourceLabels,
                 source: account.source
             )
         } catch let error as DecodingError {

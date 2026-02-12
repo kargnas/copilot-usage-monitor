@@ -934,10 +934,57 @@ final class StatusBarController: NSObject {
                     )
                     let showAuthLabel = authLabels.count > 1
                     let baseName = multiAccountBaseName(for: identifier)
+                    let codexEmailByAccountId: [String: String]
+                    if identifier == .codex {
+                        codexEmailByAccountId = Dictionary(
+                            uniqueKeysWithValues: TokenManager.shared.getOpenAIAccounts().compactMap { account in
+                                guard let accountId = account.accountId?
+                                    .trimmingCharacters(in: .whitespacesAndNewlines),
+                                      !accountId.isEmpty,
+                                      let email = account.email?
+                                    .trimmingCharacters(in: .whitespacesAndNewlines),
+                                      !email.isEmpty else {
+                                    return nil
+                                }
+                                return (accountId, email)
+                            }
+                        )
+                    } else {
+                        codexEmailByAccountId = [:]
+                    }
                     for account in accounts {
                         hasQuota = true
                         var displayName = accounts.count > 1 ? "\(baseName) #\(account.accountIndex + 1)" : baseName
-                        if accounts.count > 1, showAuthLabel {
+
+                        let codexEmail: String?
+                        if identifier == .codex,
+                           let detailsEmail = account.details?.email?
+                            .trimmingCharacters(in: .whitespacesAndNewlines),
+                           !detailsEmail.isEmpty {
+                            codexEmail = detailsEmail
+                        } else if identifier == .codex,
+                                  let accountId = account.accountId?
+                            .trimmingCharacters(in: .whitespacesAndNewlines),
+                                  !accountId.isEmpty,
+                                  let mappedEmail = codexEmailByAccountId[accountId],
+                                  !mappedEmail.isEmpty {
+                            codexEmail = mappedEmail
+                        } else if identifier == .codex,
+                                  let fallbackEmail = codexEmailByAccountId.values.first,
+                                  accounts.count == 1 {
+                            // Single-account fallback for legacy cached results that may miss accountId.
+                            codexEmail = fallbackEmail
+                        } else {
+                            codexEmail = nil
+                        }
+
+                        if let codexEmail {
+                            if accounts.count > 1 {
+                                displayName += " (\(codexEmail))"
+                            } else {
+                                displayName = "\(baseName) (\(codexEmail))"
+                            }
+                        } else if accounts.count > 1, showAuthLabel {
                             let sourceLabel = authSourceLabel(for: account.details?.authSource, provider: identifier) ?? "Unknown"
                             displayName += " (\(sourceLabel))"
                         }
@@ -1191,54 +1238,83 @@ final class StatusBarController: NSObject {
     }
 
     private func authSourceLabel(for authSource: String?, provider: ProviderIdentifier) -> String? {
-        guard let authSource = authSource, !authSource.isEmpty else { return nil }
-        let lowercased = authSource.lowercased()
+        guard let authSource, !authSource.isEmpty else { return nil }
 
-        if lowercased.contains("opencode") {
-            return "OpenCode"
-        }
+        func parseSingleSource(_ rawSource: String) -> String? {
+            let lowercased = rawSource.lowercased()
 
-        switch provider {
-        case .codex:
-            if lowercased.contains(".codex") || lowercased.contains("/codex/") {
-                return "Codex"
+            if lowercased.contains("opencode") {
+                return "OpenCode"
             }
-        case .claude:
+
+            switch provider {
+            case .codex:
+                if lowercased.contains(".codex-lb") || lowercased.contains("/codex-lb/") || lowercased.contains("codex lb") {
+                    return "Codex LB"
+                }
+                if lowercased.contains(".codex") || lowercased.contains("/codex/") || lowercased == "codex" {
+                    return "Codex"
+                }
+            case .claude:
+                if lowercased.contains("claude code (keychain)") || lowercased.contains("keychain") {
+                    return "Claude Code (Keychain)"
+                }
+                if lowercased.contains("claude code (legacy)") || lowercased.contains(".credentials.json") || lowercased.contains(".claude") {
+                    return "Claude Code (Legacy)"
+                }
+                if lowercased.contains("claude-code") || lowercased.contains("claude code") {
+                    return "Claude Code"
+                }
+            case .copilot:
+                if lowercased.contains("browser cookies") {
+                    return "Browser Cookies"
+                }
+                if lowercased.contains("github-copilot") {
+                    if lowercased.contains("hosts.json") {
+                        return "VS Code (hosts.json)"
+                    }
+                    if lowercased.contains("apps.json") {
+                        return "VS Code (apps.json)"
+                    }
+                    return "VS Code"
+                }
+            case .geminiCLI:
+                if lowercased.contains("antigravity") {
+                    return "Antigravity"
+                }
+            default:
+                break
+            }
+
             if lowercased.contains("keychain") {
-                return "Claude Code (Keychain)"
+                return "Keychain"
             }
-            if lowercased.contains("claude-code") {
-                return "Claude Code"
-            }
-            if lowercased.contains(".credentials.json") || lowercased.contains(".claude") {
-                return "Claude Code (Legacy)"
-            }
-        case .copilot:
-            if lowercased.contains("browser cookies") {
-                return "Browser Cookies"
-            }
-            if lowercased.contains("github-copilot") {
-                if lowercased.contains("hosts.json") {
-                    return "VS Code (hosts.json)"
-                }
-                if lowercased.contains("apps.json") {
-                    return "VS Code (apps.json)"
-                }
-                return "VS Code"
-            }
-        case .geminiCLI:
-            if lowercased.contains("antigravity") {
-                return "Antigravity"
-            }
-        default:
-            break
+
+            return nil
         }
 
-        if lowercased.contains("keychain") {
-            return "Keychain"
+        let parts = authSource
+            .components(separatedBy: CharacterSet(charactersIn: ",;|"))
+            .flatMap { segment in
+                segment.components(separatedBy: " + ")
+            }
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+
+        let sourceParts = parts.isEmpty ? [authSource] : parts
+        var labels: [String] = []
+        for part in sourceParts {
+            guard let label = parseSingleSource(part), !labels.contains(label) else { continue }
+            labels.append(label)
         }
 
-        return nil
+        if labels.isEmpty {
+            return parseSingleSource(authSource)
+        }
+        if labels.count == 1 {
+            return labels.first
+        }
+        return labels.joined(separator: " + ")
     }
 
     /// Color for usage percentage: 70%+ → orange, 90%+ → red

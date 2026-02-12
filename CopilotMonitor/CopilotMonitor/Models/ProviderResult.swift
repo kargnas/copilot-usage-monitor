@@ -30,10 +30,31 @@ struct GeminiAccountQuota: Codable {
     let remainingPercentage: Double
     let modelBreakdown: [String: Double]
     let authSource: String
+    let authUsageSummary: String?
     /// Earliest reset time among all model quotas for this account
     let earliestReset: Date?
     /// Reset time for each model (key: modelId, value: reset date)
     let modelResetTimes: [String: Date]
+
+    init(
+        accountIndex: Int,
+        email: String,
+        remainingPercentage: Double,
+        modelBreakdown: [String: Double],
+        authSource: String,
+        authUsageSummary: String? = nil,
+        earliestReset: Date?,
+        modelResetTimes: [String: Date]
+    ) {
+        self.accountIndex = accountIndex
+        self.email = email
+        self.remainingPercentage = remainingPercentage
+        self.modelBreakdown = modelBreakdown
+        self.authSource = authSource
+        self.authUsageSummary = authUsageSummary
+        self.earliestReset = earliestReset
+        self.modelResetTimes = modelResetTimes
+    }
 }
 
 struct DetailedUsage {
@@ -85,8 +106,8 @@ struct DetailedUsage {
     let messages: Int?
     let avgCostPerDay: Double?
 
-    // Antigravity user email
-    let email: String?
+    // var: mutated during candidate merging for email fallback
+    var email: String?
 
     // History and cost tracking
     let dailyHistory: [DailyUsage]?
@@ -95,7 +116,9 @@ struct DetailedUsage {
     let creditsTotal: Double?
 
     // Authentication source info (displayed as "Token From:" or "Cookies From:")
-    let authSource: String?
+    var authSource: String?
+    // Human-friendly source labels (displayed as "Using in:")
+    var authUsageSummary: String?
 
     // Multiple Gemini accounts support
     let geminiAccounts: [GeminiAccountQuota]?
@@ -159,6 +182,7 @@ struct DetailedUsage {
         creditsRemaining: Double? = nil,
         creditsTotal: Double? = nil,
         authSource: String? = nil,
+        authUsageSummary: String? = nil,
         geminiAccounts: [GeminiAccountQuota]? = nil,
         tokenUsagePercent: Double? = nil,
         tokenUsageReset: Date? = nil,
@@ -215,6 +239,7 @@ struct DetailedUsage {
         self.creditsRemaining = creditsRemaining
         self.creditsTotal = creditsTotal
         self.authSource = authSource
+        self.authUsageSummary = authUsageSummary
         self.geminiAccounts = geminiAccounts
         self.tokenUsagePercent = tokenUsagePercent
         self.tokenUsageReset = tokenUsageReset
@@ -248,7 +273,7 @@ extension DetailedUsage: Codable {
         case extraUsageMonthlyLimitUSD, extraUsageUsedUSD, extraUsageUtilizationPercent
         case sessions, messages, avgCostPerDay, email
         case dailyHistory, monthlyCost, creditsRemaining, creditsTotal
-        case authSource, geminiAccounts
+        case authSource, authUsageSummary, geminiAccounts
         case tokenUsagePercent, tokenUsageReset, tokenUsageUsed, tokenUsageTotal
         case mcpUsagePercent, mcpUsageReset, mcpUsageUsed, mcpUsageTotal
         case modelUsageTokens, modelUsageCalls
@@ -294,6 +319,7 @@ extension DetailedUsage: Codable {
         creditsRemaining = try container.decodeIfPresent(Double.self, forKey: .creditsRemaining)
         creditsTotal = try container.decodeIfPresent(Double.self, forKey: .creditsTotal)
         authSource = try container.decodeIfPresent(String.self, forKey: .authSource)
+        authUsageSummary = try container.decodeIfPresent(String.self, forKey: .authUsageSummary)
         geminiAccounts = try container.decodeIfPresent([GeminiAccountQuota].self, forKey: .geminiAccounts)
         tokenUsagePercent = try container.decodeIfPresent(Double.self, forKey: .tokenUsagePercent)
         tokenUsageReset = try container.decodeIfPresent(Date.self, forKey: .tokenUsageReset)
@@ -353,6 +379,7 @@ extension DetailedUsage: Codable {
         try container.encodeIfPresent(creditsRemaining, forKey: .creditsRemaining)
         try container.encodeIfPresent(creditsTotal, forKey: .creditsTotal)
         try container.encodeIfPresent(authSource, forKey: .authSource)
+        try container.encodeIfPresent(authUsageSummary, forKey: .authUsageSummary)
         try container.encodeIfPresent(geminiAccounts, forKey: .geminiAccounts)
         try container.encodeIfPresent(tokenUsagePercent, forKey: .tokenUsagePercent)
         try container.encodeIfPresent(tokenUsageReset, forKey: .tokenUsageReset)
@@ -381,23 +408,32 @@ struct CandidateDedupe {
         _ candidates: [T],
         accountId: (T) -> String?,
         isSameUsage: (T, T) -> Bool,
-        priority: (T) -> Int
+        priority: (T) -> Int,
+        mergeCandidates: ((T, T) -> T)? = nil
     ) -> [T] {
         var results: [T] = []
 
         for candidate in candidates {
             if let candidateId = accountId(candidate),
                let index = results.firstIndex(where: { accountId($0) == candidateId }) {
-                if priority(candidate) > priority(results[index]) {
-                    results[index] = candidate
-                }
+                let existing = results[index]
+                results[index] = preferredCandidate(
+                    incoming: candidate,
+                    existing: existing,
+                    priority: priority,
+                    mergeCandidates: mergeCandidates
+                )
                 continue
             }
 
             if let index = results.firstIndex(where: { isSameUsage($0, candidate) }) {
-                if priority(candidate) > priority(results[index]) {
-                    results[index] = candidate
-                }
+                let existing = results[index]
+                results[index] = preferredCandidate(
+                    incoming: candidate,
+                    existing: existing,
+                    priority: priority,
+                    mergeCandidates: mergeCandidates
+                )
                 continue
             }
 
@@ -405,6 +441,31 @@ struct CandidateDedupe {
         }
 
         return results
+    }
+
+    private static func preferredCandidate<T>(
+        incoming: T,
+        existing: T,
+        priority: (T) -> Int,
+        mergeCandidates: ((T, T) -> T)?
+    ) -> T {
+        let incomingPriority = priority(incoming)
+        let existingPriority = priority(existing)
+
+        let preferred: T
+        let secondary: T
+        if incomingPriority > existingPriority {
+            preferred = incoming
+            secondary = existing
+        } else {
+            preferred = existing
+            secondary = incoming
+        }
+
+        guard let mergeCandidates else {
+            return preferred
+        }
+        return mergeCandidates(preferred, secondary)
     }
 }
 
@@ -426,7 +487,7 @@ extension DetailedUsage {
             || email != nil
             || dailyHistory != nil || monthlyCost != nil
             || creditsRemaining != nil || creditsTotal != nil
-            || authSource != nil || geminiAccounts != nil
+            || authSource != nil || authUsageSummary != nil || geminiAccounts != nil
             || tokenUsagePercent != nil || tokenUsageReset != nil
             || tokenUsageUsed != nil || tokenUsageTotal != nil
             || mcpUsagePercent != nil || mcpUsageReset != nil

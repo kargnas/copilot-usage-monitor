@@ -56,7 +56,14 @@ final class GeminiCLIProvider: ProviderProtocol {
         for account in allAccounts {
             do {
                 let quotaResult = try await fetchQuotaForAccount(account: account)
-                candidates.append(GeminiAccountCandidate(quota: quotaResult, source: account.source))
+                let sourceLabels = account.sourceLabels.isEmpty ? [sourceLabel(account.source)] : account.sourceLabels
+                candidates.append(
+                    GeminiAccountCandidate(
+                        quota: quotaResult,
+                        sourceLabels: sourceLabels,
+                        source: account.source
+                    )
+                )
             } catch {
                 let displayEmail = account.email?.isEmpty == false ? account.email ?? "" : "unknown"
                 logger.warning("Failed to fetch quota for account #\(account.index + 1) (\(displayEmail)): \(error.localizedDescription)")
@@ -75,7 +82,8 @@ final class GeminiCLIProvider: ProviderProtocol {
                 return email == "Unknown" || email.isEmpty ? nil : email
             },
             isSameUsage: { isSameUsage($0.quota, $1.quota) },
-            priority: { sourcePriority($0.source) }
+            priority: { sourcePriority($0.source) },
+            mergeCandidates: mergeCandidates
         )
         let sorted = deduped.sorted { lhs, rhs in
             sourcePriority(lhs.source) > sourcePriority(rhs.source)
@@ -89,6 +97,7 @@ final class GeminiCLIProvider: ProviderProtocol {
                 remainingPercentage: quota.remainingPercentage,
                 modelBreakdown: quota.modelBreakdown,
                 authSource: quota.authSource,
+                authUsageSummary: quota.authUsageSummary,
                 earliestReset: quota.earliestReset,
                 modelResetTimes: quota.modelResetTimes
             )
@@ -104,18 +113,18 @@ final class GeminiCLIProvider: ProviderProtocol {
             overagePermitted: false
         )
 
-        let authSources = Set(geminiAccountQuotas.map { $0.authSource })
-        let authSourceSummary: String?
-        if authSources.count == 1 {
-            authSourceSummary = authSources.first
-        } else if authSources.count > 1 {
-            authSourceSummary = "Multiple auth sources"
+        let usageSummaries = Set(geminiAccountQuotas.compactMap { $0.authUsageSummary })
+        let authUsageSummary: String?
+        if usageSummaries.count == 1 {
+            authUsageSummary = usageSummaries.first
+        } else if usageSummaries.count > 1 {
+            authUsageSummary = "Multiple auth sources"
         } else {
-            authSourceSummary = nil
+            authUsageSummary = nil
         }
 
         let details = DetailedUsage(
-            authSource: authSourceSummary,
+            authUsageSummary: authUsageSummary,
             geminiAccounts: geminiAccountQuotas
         )
 
@@ -124,6 +133,7 @@ final class GeminiCLIProvider: ProviderProtocol {
 
     private struct GeminiAccountCandidate {
         let quota: GeminiAccountQuota
+        let sourceLabels: [String]
         let source: GeminiAuthSource
     }
 
@@ -134,6 +144,63 @@ final class GeminiCLIProvider: ProviderProtocol {
         case .antigravity:
             return 1
         }
+    }
+
+    private func sourceLabel(_ source: GeminiAuthSource) -> String {
+        switch source {
+        case .opencodeAuth:
+            return "OpenCode"
+        case .antigravity:
+            return "Antigravity"
+        }
+    }
+
+    private func mergeSourceLabels(_ primary: [String], _ secondary: [String]) -> [String] {
+        var merged: [String] = []
+        for label in primary + secondary {
+            let trimmed = label.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty, !merged.contains(trimmed) else { continue }
+            merged.append(trimmed)
+        }
+        return merged
+    }
+
+    private func sourceSummary(_ labels: [String], fallback: String) -> String {
+        let merged = mergeSourceLabels(labels, [])
+        if merged.isEmpty {
+            return fallback
+        }
+        if merged.count == 1, let first = merged.first {
+            return first
+        }
+        return merged.joined(separator: " + ")
+    }
+
+    private func mergeCandidates(primary: GeminiAccountCandidate, secondary: GeminiAccountCandidate) -> GeminiAccountCandidate {
+        let mergedLabels = mergeSourceLabels(primary.sourceLabels, secondary.sourceLabels)
+        let mergedAuthUsageSummary = sourceSummary(mergedLabels, fallback: "Unknown")
+
+        // Fallback to secondary email when primary has none (different auth sources may carry different metadata)
+        let mergedEmail = (primary.quota.email.isEmpty || primary.quota.email == "Unknown")
+            ? secondary.quota.email
+            : primary.quota.email
+
+        let mergedQuota = GeminiAccountQuota(
+            accountIndex: primary.quota.accountIndex,
+            email: mergedEmail,
+            remainingPercentage: primary.quota.remainingPercentage,
+            modelBreakdown: primary.quota.modelBreakdown,
+            authSource: primary.quota.authSource,
+            authUsageSummary: mergedAuthUsageSummary,
+            earliestReset: primary.quota.earliestReset,
+            modelResetTimes: primary.quota.modelResetTimes
+        )
+
+        return GeminiAccountCandidate(
+            quota: mergedQuota,
+            sourceLabels: mergedLabels,
+            source: primary.source
+        )
     }
 
     private func isSameUsage(_ lhs: GeminiAccountQuota, _ rhs: GeminiAccountQuota) -> Bool {
@@ -236,6 +303,8 @@ final class GeminiCLIProvider: ProviderProtocol {
         let remainingPercentage = minFraction * 100.0
 
         logger.info("Gemini CLI account #\(accountIndex + 1) (\(resolvedEmail)): \(remainingPercentage)% remaining, resets: \(earliestReset?.description ?? "unknown")")
+        let sourceLabels = account.sourceLabels.isEmpty ? [sourceLabel(account.source)] : account.sourceLabels
+        let authUsageSummary = sourceSummary(sourceLabels, fallback: "Unknown")
 
         return GeminiAccountQuota(
             accountIndex: accountIndex,
@@ -243,6 +312,7 @@ final class GeminiCLIProvider: ProviderProtocol {
             remainingPercentage: remainingPercentage,
             modelBreakdown: modelBreakdown,
             authSource: account.authSource,
+            authUsageSummary: authUsageSummary,
             earliestReset: earliestReset,
             modelResetTimes: modelResetTimes
         )

@@ -67,7 +67,8 @@ final class CodexProvider: ProviderProtocol {
             candidates,
             accountId: { $0.accountId },
             isSameUsage: isSameUsage,
-            priority: { sourcePriority($0.source) }
+            priority: { sourcePriority($0.source) },
+            mergeCandidates: mergeCandidates
         )
         let sorted = merged.sorted { lhs, rhs in
             sourcePriority(lhs.source) > sourcePriority(rhs.source)
@@ -96,6 +97,7 @@ final class CodexProvider: ProviderProtocol {
         let accountId: String?
         let usage: ProviderUsage
         let details: DetailedUsage
+        let sourceLabels: [String]
         let source: OpenAIAuthSource
     }
 
@@ -103,9 +105,62 @@ final class CodexProvider: ProviderProtocol {
         switch source {
         case .opencodeAuth:
             return 2
-        case .codexAuth:
+        case .codexLB:
             return 1
+        case .codexAuth:
+            return 0
         }
+    }
+
+    private func sourceLabel(_ source: OpenAIAuthSource) -> String {
+        switch source {
+        case .opencodeAuth:
+            return "OpenCode"
+        case .codexLB:
+            return "Codex LB"
+        case .codexAuth:
+            return "Codex"
+        }
+    }
+
+    private func mergeSourceLabels(_ primary: [String], _ secondary: [String]) -> [String] {
+        var merged: [String] = []
+        for label in primary + secondary {
+            let trimmed = label.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty, !merged.contains(trimmed) else { continue }
+            merged.append(trimmed)
+        }
+        return merged
+    }
+
+    private func sourceSummary(_ labels: [String], fallback: String) -> String {
+        let merged = mergeSourceLabels(labels, [])
+        if merged.isEmpty {
+            return fallback
+        }
+        if merged.count == 1, let first = merged.first {
+            return first
+        }
+        return merged.joined(separator: " + ")
+    }
+
+    private func mergeCandidates(primary: CodexAccountCandidate, secondary: CodexAccountCandidate) -> CodexAccountCandidate {
+        let mergedLabels = mergeSourceLabels(primary.sourceLabels, secondary.sourceLabels)
+        var mergedDetails = primary.details
+        mergedDetails.authUsageSummary = sourceSummary(mergedLabels, fallback: "Unknown")
+
+        // Fallback to secondary email when primary has none (different auth sources may carry different metadata)
+        if mergedDetails.email == nil || mergedDetails.email?.isEmpty == true {
+            mergedDetails.email = secondary.details.email
+        }
+
+        return CodexAccountCandidate(
+            accountId: primary.accountId,
+            usage: primary.usage,
+            details: mergedDetails,
+            sourceLabels: mergedLabels,
+            source: primary.source
+        )
     }
 
     private func fetchUsageForAccount(_ account: OpenAIAuthAccount) async throws -> CodexAccountCandidate {
@@ -169,6 +224,8 @@ final class CodexProvider: ProviderProtocol {
         let secondaryResetDate = secondaryWindow != nil ? now.addingTimeInterval(TimeInterval(secondaryResetSeconds)) : nil
 
         let remaining = Int(100 - primaryUsedPercent)
+        let sourceLabels = account.sourceLabels.isEmpty ? [sourceLabel(account.source)] : account.sourceLabels
+        let authUsageSummary = sourceSummary(sourceLabels, fallback: "Unknown")
         let details = DetailedUsage(
             dailyUsage: primaryUsedPercent,
             secondaryUsage: secondaryUsedPercent,
@@ -176,16 +233,19 @@ final class CodexProvider: ProviderProtocol {
             primaryReset: primaryResetDate,
             creditsBalance: codexResponse.credits?.balanceAsDouble,
             planType: codexResponse.plan_type,
-            authSource: account.authSource
+            email: account.email,
+            authSource: account.authSource,
+            authUsageSummary: authUsageSummary
         )
 
-        logger.info("Codex usage fetched (\(account.authSource)): primary=\(primaryUsedPercent)%, secondary=\(secondaryUsedPercent)%, plan=\(codexResponse.plan_type ?? "unknown")")
+        logger.debug("Codex usage fetched (\(authUsageSummary)): email=\(account.email ?? "unknown"), primary=\(primaryUsedPercent)%, secondary=\(secondaryUsedPercent)%, plan=\(codexResponse.plan_type ?? "unknown")")
 
         let usage = ProviderUsage.quotaBased(remaining: remaining, entitlement: 100, overagePermitted: false)
         return CodexAccountCandidate(
             accountId: account.accountId,
             usage: usage,
             details: details,
+            sourceLabels: sourceLabels,
             source: account.source
         )
     }

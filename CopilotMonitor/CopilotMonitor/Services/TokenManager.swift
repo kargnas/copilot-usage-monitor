@@ -1,5 +1,7 @@
 import Foundation
 import Security
+import SQLite3
+import CommonCrypto
 import os.log
 
 private let logger = Logger(subsystem: "com.opencodeproviders", category: "TokenManager")
@@ -288,9 +290,22 @@ struct CodexAuth: Codable {
     }
 }
 
+/// codex-lb row payload from store.db/accounts table
+private struct CodexLBEncryptedAccount {
+    let accountId: String?
+    let email: String?
+    let planType: String?
+    let status: String?
+    let accessTokenEncrypted: Data
+    let refreshTokenEncrypted: Data?
+    let idTokenEncrypted: Data?
+    let lastRefresh: String?
+}
+
 /// Auth source types for OpenAI (Codex) account discovery
 enum OpenAIAuthSource {
     case opencodeAuth
+    case codexLB
     case codexAuth
 }
 
@@ -298,7 +313,9 @@ enum OpenAIAuthSource {
 struct OpenAIAuthAccount {
     let accessToken: String
     let accountId: String?
+    let email: String?
     let authSource: String
+    let sourceLabels: [String]
     let source: OpenAIAuthSource
 }
 
@@ -316,6 +333,7 @@ struct ClaudeAuthAccount {
     let accountId: String?
     let email: String?
     let authSource: String
+    let sourceLabels: [String]
     let source: ClaudeAuthSource
 }
 
@@ -346,14 +364,17 @@ struct CopilotPlanInfo {
 /// Antigravity Accounts structure for NoeFabris/opencode-antigravity-auth (~/.config/opencode/antigravity-accounts.json)
 struct AntigravityAccounts: Codable {
     struct Account: Codable {
-        let email: String
-        let refreshToken: String
-        let projectId: String
+        let email: String?
+        let refreshToken: String?
+        let projectId: String?
+        let managedProjectId: String?
+        let enabled: Bool?
     }
 
-    let version: Int
+    let version: Int?
     let accounts: [Account]
-    let activeIndex: Int
+    let activeIndex: Int?
+    let activeIndexByFamily: [String: Int]?
 }
 
 /// Auth source types for Gemini CLI token discovery
@@ -371,6 +392,7 @@ struct GeminiAuthAccount {
     let refreshToken: String
     let projectId: String
     let authSource: String
+    let sourceLabels: [String]
     let clientId: String
     let clientSecret: String
     let source: GeminiAuthSource
@@ -544,6 +566,10 @@ final class TokenManager: @unchecked Sendable {
 
     private var cachedCodexAuth: CodexAuth?
     private var codexCacheTimestamp: Date?
+    private var cachedCodexLBAccounts: [OpenAIAuthAccount]?
+    private var codexLBCacheTimestamp: Date?
+    private(set) var lastFoundCodexLBStorePath: URL?
+    private(set) var lastFoundCodexLBKeyPath: URL?
 
     func readCodexAuth() -> CodexAuth? {
         return queue.sync {
@@ -579,6 +605,549 @@ final class TokenManager: @unchecked Sendable {
                 return nil
             }
         }
+    }
+
+    // MARK: - codex-lb SQLite Account Discovery
+
+    private enum CodexLBError: LocalizedError {
+        case invalidFernetKey
+        case invalidFernetToken
+        case invalidFernetSignature
+        case sqliteOpenFailed
+        case sqlitePrepareFailed(String)
+        case sqliteStepFailed(Int32)
+        case aesDecryptFailed(Int32)
+        case invalidDecryptedToken
+
+        var errorDescription: String? {
+            switch self {
+            case .invalidFernetKey:
+                return "Invalid codex-lb Fernet key"
+            case .invalidFernetToken:
+                return "Invalid codex-lb Fernet token"
+            case .invalidFernetSignature:
+                return "Invalid codex-lb Fernet signature"
+            case .sqliteOpenFailed:
+                return "Failed to open codex-lb SQLite database"
+            case .sqlitePrepareFailed(let message):
+                return "Failed to prepare codex-lb SQLite query: \(message)"
+            case .sqliteStepFailed(let status):
+                return "Failed to read codex-lb SQLite rows (status \(status))"
+            case .aesDecryptFailed(let status):
+                return "codex-lb AES decryption failed (status \(status))"
+            case .invalidDecryptedToken:
+                return "codex-lb decrypted token is empty or invalid"
+            }
+        }
+    }
+
+    private struct CodexLBStoragePaths {
+        let databaseURL: URL
+        let keyURL: URL
+    }
+
+    private func codexLBStorageCandidates() -> [CodexLBStoragePaths] {
+        var basePaths: [URL] = []
+        if let customHome = ProcessInfo.processInfo.environment["CODEX_LB_HOME"],
+           !customHome.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            basePaths.append(URL(fileURLWithPath: customHome, isDirectory: true))
+        }
+
+        let homeDir = FileManager.default.homeDirectoryForCurrentUser
+        basePaths.append(homeDir.appendingPathComponent(".codex-lb", isDirectory: true))
+        basePaths.append(URL(fileURLWithPath: "/var/lib/codex-lb", isDirectory: true))
+
+        var visited = Set<String>()
+        return basePaths.compactMap { baseURL in
+            let normalizedBase = baseURL.standardizedFileURL.path
+            guard visited.insert(normalizedBase).inserted else {
+                return nil
+            }
+            return CodexLBStoragePaths(
+                databaseURL: baseURL.appendingPathComponent("store.db"),
+                keyURL: baseURL.appendingPathComponent("encryption.key")
+            )
+        }
+    }
+
+    private func sqliteColumnString(_ statement: OpaquePointer?, index: Int32) -> String? {
+        let type = sqlite3_column_type(statement, index)
+        switch type {
+        case SQLITE_NULL:
+            return nil
+        case SQLITE_INTEGER:
+            return String(sqlite3_column_int64(statement, index))
+        case SQLITE_FLOAT:
+            return String(sqlite3_column_double(statement, index))
+        case SQLITE_TEXT:
+            guard let textPointer = sqlite3_column_text(statement, index) else { return nil }
+            let value = String(cString: textPointer).trimmingCharacters(in: .whitespacesAndNewlines)
+            return value.isEmpty ? nil : value
+        default:
+            if let data = sqliteColumnData(statement, index: index),
+               let string = String(data: data, encoding: .utf8)?
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+               !string.isEmpty {
+                return string
+            }
+            return nil
+        }
+    }
+
+    private func sqliteColumnData(_ statement: OpaquePointer?, index: Int32) -> Data? {
+        let type = sqlite3_column_type(statement, index)
+        switch type {
+        case SQLITE_NULL:
+            return nil
+        case SQLITE_BLOB:
+            guard let blobPointer = sqlite3_column_blob(statement, index) else { return nil }
+            let length = Int(sqlite3_column_bytes(statement, index))
+            guard length > 0 else { return nil }
+            return Data(bytes: blobPointer, count: length)
+        case SQLITE_TEXT:
+            guard let textPointer = sqlite3_column_text(statement, index) else { return nil }
+            return String(cString: textPointer).data(using: .utf8)
+        default:
+            return nil
+        }
+    }
+
+    private func queryCodexLBEncryptedAccounts(databaseURL: URL) throws -> [CodexLBEncryptedAccount] {
+        let fileManager = FileManager.default
+        let tempDirectory = fileManager.temporaryDirectory.appendingPathComponent(
+            "opencode-bar-codex-lb-\(UUID().uuidString)",
+            isDirectory: true
+        )
+        try fileManager.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
+        defer { try? fileManager.removeItem(at: tempDirectory) }
+
+        let tempDBURL = tempDirectory.appendingPathComponent("store.db")
+        try fileManager.copyItem(at: databaseURL, to: tempDBURL)
+
+        let optionalSidecars = [
+            (
+                source: URL(fileURLWithPath: databaseURL.path + "-wal"),
+                destination: tempDirectory.appendingPathComponent("store.db-wal")
+            ),
+            (
+                source: URL(fileURLWithPath: databaseURL.path + "-shm"),
+                destination: tempDirectory.appendingPathComponent("store.db-shm")
+            )
+        ]
+        for sidecar in optionalSidecars where fileManager.fileExists(atPath: sidecar.source.path) {
+            try? fileManager.copyItem(at: sidecar.source, to: sidecar.destination)
+        }
+
+        var db: OpaquePointer?
+        guard sqlite3_open_v2(tempDBURL.path, &db, SQLITE_OPEN_READONLY, nil) == SQLITE_OK else {
+            throw CodexLBError.sqliteOpenFailed
+        }
+        defer { sqlite3_close(db) }
+
+        let queries = [
+            """
+            SELECT
+                id,
+                email,
+                plan_type,
+                status,
+                access_token_encrypted,
+                refresh_token_encrypted,
+                id_token_encrypted,
+                last_refresh
+            FROM accounts
+            """,
+            """
+            SELECT
+                id,
+                email,
+                NULL AS plan_type,
+                NULL AS status,
+                access_token_encrypted,
+                NULL AS refresh_token_encrypted,
+                NULL AS id_token_encrypted,
+                NULL AS last_refresh
+            FROM accounts
+            """
+        ]
+
+        var statement: OpaquePointer?
+        var prepared = false
+        var prepareError = "Unknown SQLite error"
+        for query in queries {
+            if sqlite3_prepare_v2(db, query, -1, &statement, nil) == SQLITE_OK {
+                prepared = true
+                break
+            }
+            if let errorMessage = sqlite3_errmsg(db) {
+                prepareError = String(cString: errorMessage)
+            }
+        }
+        guard prepared, let statement else {
+            throw CodexLBError.sqlitePrepareFailed(prepareError)
+        }
+        defer { sqlite3_finalize(statement) }
+
+        var accounts: [CodexLBEncryptedAccount] = []
+        while true {
+            let stepStatus = sqlite3_step(statement)
+            if stepStatus == SQLITE_DONE {
+                break
+            }
+            if stepStatus != SQLITE_ROW {
+                throw CodexLBError.sqliteStepFailed(stepStatus)
+            }
+
+            guard let accessTokenEncrypted = sqliteColumnData(statement, index: 4), !accessTokenEncrypted.isEmpty else {
+                continue
+            }
+
+            let account = CodexLBEncryptedAccount(
+                accountId: sqliteColumnString(statement, index: 0),
+                email: sqliteColumnString(statement, index: 1),
+                planType: sqliteColumnString(statement, index: 2),
+                status: sqliteColumnString(statement, index: 3),
+                accessTokenEncrypted: accessTokenEncrypted,
+                refreshTokenEncrypted: sqliteColumnData(statement, index: 5),
+                idTokenEncrypted: sqliteColumnData(statement, index: 6),
+                lastRefresh: sqliteColumnString(statement, index: 7)
+            )
+            accounts.append(account)
+        }
+
+        return accounts
+    }
+
+    private func decodeBase64URL(_ rawValue: String) throws -> Data {
+        var sanitized = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        sanitized = sanitized
+            .replacingOccurrences(of: "-", with: "+")
+            .replacingOccurrences(of: "_", with: "/")
+
+        let remainder = sanitized.count % 4
+        if remainder != 0 {
+            sanitized += String(repeating: "=", count: 4 - remainder)
+        }
+
+        guard let decoded = Data(base64Encoded: sanitized) else {
+            throw CodexLBError.invalidFernetToken
+        }
+        return decoded
+    }
+
+    private func decodeCodexLBFernetKey(_ keyData: Data) throws -> Data {
+        let keyString = String(data: keyData, encoding: .utf8)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            ?? ""
+        guard !keyString.isEmpty else {
+            throw CodexLBError.invalidFernetKey
+        }
+        let decodedKey = try decodeBase64URL(keyString)
+        guard decodedKey.count == 32 else {
+            throw CodexLBError.invalidFernetKey
+        }
+        return decodedKey
+    }
+
+    private func hmacSHA256(data: Data, key: Data) -> Data {
+        var digest = Data(count: Int(CC_SHA256_DIGEST_LENGTH))
+        digest.withUnsafeMutableBytes { digestBytes in
+            data.withUnsafeBytes { dataBytes in
+                key.withUnsafeBytes { keyBytes in
+                    CCHmac(
+                        CCHmacAlgorithm(kCCHmacAlgSHA256),
+                        keyBytes.baseAddress,
+                        key.count,
+                        dataBytes.baseAddress,
+                        data.count,
+                        digestBytes.baseAddress
+                    )
+                }
+            }
+        }
+        return digest
+    }
+
+    private func aesCBCDecrypt(ciphertext: Data, key: Data, iv: Data) throws -> Data {
+        let outputLength = ciphertext.count + kCCBlockSizeAES128
+        var output = Data(count: outputLength)
+        var decryptedLength: size_t = 0
+
+        let cryptStatus = output.withUnsafeMutableBytes { outputBytes in
+            ciphertext.withUnsafeBytes { cipherBytes in
+                iv.withUnsafeBytes { ivBytes in
+                    key.withUnsafeBytes { keyBytes in
+                        CCCrypt(
+                            CCOperation(kCCDecrypt),
+                            CCAlgorithm(kCCAlgorithmAES),
+                            CCOptions(kCCOptionPKCS7Padding),
+                            keyBytes.baseAddress,
+                            key.count,
+                            ivBytes.baseAddress,
+                            cipherBytes.baseAddress,
+                            ciphertext.count,
+                            outputBytes.baseAddress,
+                            outputLength,
+                            &decryptedLength
+                        )
+                    }
+                }
+            }
+        }
+
+        guard cryptStatus == kCCSuccess else {
+            throw CodexLBError.aesDecryptFailed(cryptStatus)
+        }
+
+        return output.prefix(decryptedLength)
+    }
+
+    private func decryptCodexLBFernetToken(_ encryptedToken: Data, key: Data) throws -> String {
+        let tokenData: Data
+        if encryptedToken.first == 0x80 {
+            tokenData = encryptedToken
+        } else {
+            guard let tokenString = String(data: encryptedToken, encoding: .utf8)?
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+                !tokenString.isEmpty else {
+                throw CodexLBError.invalidFernetToken
+            }
+            tokenData = try decodeBase64URL(tokenString)
+        }
+
+        guard tokenData.count > 57, tokenData.first == 0x80 else {
+            throw CodexLBError.invalidFernetToken
+        }
+
+        let signatureStart = tokenData.count - 32
+        let signedData = tokenData.prefix(signatureStart)
+        let signature = tokenData.suffix(32)
+
+        let signingKey = key.prefix(16)
+        let encryptionKey = key.suffix(16)
+        let expectedSignature = hmacSHA256(data: Data(signedData), key: Data(signingKey))
+        guard expectedSignature == signature else {
+            throw CodexLBError.invalidFernetSignature
+        }
+
+        // Fernet payload layout: version(1) + timestamp(8) + iv(16) + ciphertext + hmac(32)
+        let ivStart = 1 + 8
+        let ivEnd = ivStart + 16
+        guard signatureStart > ivEnd else {
+            throw CodexLBError.invalidFernetToken
+        }
+        let iv = tokenData.subdata(in: ivStart..<ivEnd)
+        let ciphertext = tokenData.subdata(in: ivEnd..<signatureStart)
+
+        let decrypted = try aesCBCDecrypt(ciphertext: ciphertext, key: Data(encryptionKey), iv: iv)
+        guard let token = String(data: decrypted, encoding: .utf8)?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+            !token.isEmpty else {
+            throw CodexLBError.invalidDecryptedToken
+        }
+
+        return token
+    }
+
+    func readCodexLBOpenAIAccounts() -> [OpenAIAuthAccount] {
+        return queue.sync {
+            if let cached = cachedCodexLBAccounts,
+               let timestamp = codexLBCacheTimestamp,
+               Date().timeIntervalSince(timestamp) < cacheValiditySeconds {
+                return cached
+            }
+
+            let fileManager = FileManager.default
+            for candidate in codexLBStorageCandidates() {
+                guard fileManager.fileExists(atPath: candidate.databaseURL.path),
+                      fileManager.fileExists(atPath: candidate.keyURL.path) else {
+                    continue
+                }
+                guard fileManager.isReadableFile(atPath: candidate.databaseURL.path),
+                      fileManager.isReadableFile(atPath: candidate.keyURL.path) else {
+                    logger.warning("codex-lb files are not readable (db: \(candidate.databaseURL.path), key: \(candidate.keyURL.path))")
+                    continue
+                }
+
+                do {
+                    let keyData = try Data(contentsOf: candidate.keyURL)
+                    let fernetKey = try decodeCodexLBFernetKey(keyData)
+                    let encryptedAccounts = try queryCodexLBEncryptedAccounts(databaseURL: candidate.databaseURL)
+
+                    if encryptedAccounts.isEmpty {
+                        logger.info("codex-lb account table is empty at \(candidate.databaseURL.path)")
+                        continue
+                    }
+
+                    var decodedAccounts: [OpenAIAuthAccount] = []
+                    for encryptedAccount in encryptedAccounts {
+                        do {
+                            let accessToken = try decryptCodexLBFernetToken(
+                                encryptedAccount.accessTokenEncrypted,
+                                key: fernetKey
+                            )
+                            let normalizedAccountId = encryptedAccount.accountId?
+                                .trimmingCharacters(in: .whitespacesAndNewlines)
+                            let normalizedEmail = encryptedAccount.email?
+                                .trimmingCharacters(in: .whitespacesAndNewlines)
+                            decodedAccounts.append(
+                                OpenAIAuthAccount(
+                                    accessToken: accessToken,
+                                    accountId: normalizedAccountId?.isEmpty == true ? nil : normalizedAccountId,
+                                    email: normalizedEmail?.isEmpty == true ? nil : normalizedEmail,
+                                    authSource: candidate.databaseURL.path,
+                                    sourceLabels: [openAISourceLabel(for: .codexLB)],
+                                    source: .codexLB
+                                )
+                            )
+                            // PII fields (email, account ID) kept at debug level to avoid
+                            // leaking personal info in production console logs.
+                            logger.debug(
+                                """
+                                codex-lb account loaded: id=\(normalizedAccountId ?? "nil"), \
+                                email=\(encryptedAccount.email ?? "unknown"), \
+                                plan=\(encryptedAccount.planType ?? "unknown"), \
+                                status=\(encryptedAccount.status ?? "unknown"), \
+                                lastRefresh=\(encryptedAccount.lastRefresh ?? "unknown"), \
+                                hasRefreshToken=\(encryptedAccount.refreshTokenEncrypted != nil ? "YES" : "NO"), \
+                                hasIdToken=\(encryptedAccount.idTokenEncrypted != nil ? "YES" : "NO")
+                                """
+                            )
+                        } catch {
+                            logger.warning(
+                                "Failed to decrypt codex-lb access token for account \(encryptedAccount.accountId ?? "unknown"): \(error.localizedDescription)"
+                            )
+                        }
+                    }
+
+                    let deduped = dedupeOpenAIAccounts(decodedAccounts)
+                    if !deduped.isEmpty {
+                        cachedCodexLBAccounts = deduped
+                        codexLBCacheTimestamp = Date()
+                        lastFoundCodexLBStorePath = candidate.databaseURL
+                        lastFoundCodexLBKeyPath = candidate.keyURL
+                        logger.info("Successfully loaded \(deduped.count) codex-lb OpenAI account(s) from: \(candidate.databaseURL.path)")
+                        return deduped
+                    }
+
+                    logger.warning("codex-lb account rows found but no decryptable access token at \(candidate.databaseURL.path)")
+                } catch {
+                    logger.warning("Failed to read codex-lb accounts at \(candidate.databaseURL.path): \(error.localizedDescription)")
+                }
+            }
+
+            cachedCodexLBAccounts = []
+            codexLBCacheTimestamp = Date()
+            lastFoundCodexLBStorePath = nil
+            lastFoundCodexLBKeyPath = nil
+            return []
+        }
+    }
+
+    private func openAISourceLabel(for source: OpenAIAuthSource) -> String {
+        switch source {
+        case .opencodeAuth:
+            return "OpenCode"
+        case .codexLB:
+            return "Codex LB"
+        case .codexAuth:
+            return "Codex"
+        }
+    }
+
+    private func claudeSourceLabel(for source: ClaudeAuthSource) -> String {
+        switch source {
+        case .opencodeAuth:
+            return "OpenCode"
+        case .claudeCodeConfig:
+            return "Claude Code"
+        case .claudeCodeKeychain:
+            return "Claude Code (Keychain)"
+        case .claudeLegacyCredentials:
+            return "Claude Code (Legacy)"
+        }
+    }
+
+    private func geminiSourceLabel(for source: GeminiAuthSource) -> String {
+        switch source {
+        case .opencodeAuth:
+            return "OpenCode"
+        case .antigravity:
+            return "Antigravity"
+        }
+    }
+
+    private func mergeSourceLabels(_ primary: [String], _ fallback: [String]) -> [String] {
+        var merged: [String] = []
+        for label in primary + fallback {
+            let trimmed = label.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty, !merged.contains(trimmed) else { continue }
+            merged.append(trimmed)
+        }
+        return merged
+    }
+
+    private func dedupeOpenAIAccounts(_ accounts: [OpenAIAuthAccount]) -> [OpenAIAuthAccount] {
+        func priority(for source: OpenAIAuthSource) -> Int {
+            switch source {
+            case .opencodeAuth: return 2
+            case .codexLB: return 1
+            case .codexAuth: return 0
+            }
+        }
+
+        var accountsByKey: [String: OpenAIAuthAccount] = [:]
+        var keyOrder: [String] = []
+
+        for account in accounts {
+            let normalizedAccountId = account.accountId?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            let dedupeKey: String
+            if let normalizedAccountId, !normalizedAccountId.isEmpty {
+                dedupeKey = "id:\(normalizedAccountId)"
+            } else {
+                dedupeKey = "token:\(account.accessToken)"
+            }
+
+            if let existing = accountsByKey[dedupeKey] {
+                let accountPriority = priority(for: account.source)
+                let existingPriority = priority(for: existing.source)
+                if accountPriority > existingPriority {
+                    accountsByKey[dedupeKey] = mergeOpenAIAccount(primary: account, fallback: existing)
+                } else if existingPriority > accountPriority {
+                    accountsByKey[dedupeKey] = mergeOpenAIAccount(primary: existing, fallback: account)
+                } else {
+                    accountsByKey[dedupeKey] = mergeOpenAIAccount(primary: existing, fallback: account)
+                }
+                continue
+            }
+
+            keyOrder.append(dedupeKey)
+            accountsByKey[dedupeKey] = account
+        }
+
+        return keyOrder.compactMap { accountsByKey[$0] }
+    }
+
+    private func mergeOpenAIAccount(primary: OpenAIAuthAccount, fallback: OpenAIAuthAccount) -> OpenAIAuthAccount {
+        let primaryAccountId = primary.accountId?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let fallbackAccountId = fallback.accountId?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let primaryEmail = primary.email?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let fallbackEmail = fallback.email?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let mergedSourceLabels = mergeSourceLabels(primary.sourceLabels, fallback.sourceLabels)
+
+        return OpenAIAuthAccount(
+            accessToken: primary.accessToken,
+            accountId: (primaryAccountId?.isEmpty == false) ? primaryAccountId : fallbackAccountId,
+            email: (primaryEmail?.isEmpty == false) ? primaryEmail : fallbackEmail,
+            authSource: primary.authSource,
+            sourceLabels: mergedSourceLabels,
+            source: primary.source
+        )
     }
 
     // MARK: - Shared JSON Helpers
@@ -720,6 +1289,9 @@ final class TokenManager: @unchecked Sendable {
                 antigravityCacheTimestamp = Date()
                 logger.info("Successfully loaded Antigravity accounts")
                 return accounts
+            } catch let decodingError as DecodingError {
+                logger.error("Failed to decode Antigravity accounts: \(String(describing: decodingError))")
+                return nil
             } catch {
                 logger.error("Failed to read Antigravity accounts: \(error.localizedDescription)")
                 return nil
@@ -764,6 +1336,7 @@ final class TokenManager: @unchecked Sendable {
                     accountId: accountId,
                     email: email,
                     authSource: path.path,
+                    sourceLabels: [claudeSourceLabel(for: source)],
                     source: source
                 )
             )
@@ -797,6 +1370,7 @@ final class TokenManager: @unchecked Sendable {
                     accountId: accountId,
                     email: email,
                     authSource: "Keychain (\(service))",
+                    sourceLabels: [claudeSourceLabel(for: .claudeCodeKeychain)],
                     source: .claudeCodeKeychain
                 )
             )
@@ -829,6 +1403,7 @@ final class TokenManager: @unchecked Sendable {
                     accountId: auth.anthropic?.accountId,
                     email: nil,
                     authSource: authSource,
+                    sourceLabels: [claudeSourceLabel(for: .opencodeAuth)],
                     source: .opencodeAuth
                 )
             )
@@ -859,14 +1434,41 @@ final class TokenManager: @unchecked Sendable {
         var byToken: [String: ClaudeAuthAccount] = [:]
         for account in accounts {
             if let existing = byToken[account.accessToken] {
-                if priority(for: account.source) > priority(for: existing.source) {
-                    byToken[account.accessToken] = account
+                let accountPriority = priority(for: account.source)
+                let existingPriority = priority(for: existing.source)
+                if accountPriority > existingPriority {
+                    byToken[account.accessToken] = mergeClaudeAccount(primary: account, fallback: existing)
+                } else if existingPriority > accountPriority {
+                    byToken[account.accessToken] = mergeClaudeAccount(primary: existing, fallback: account)
+                } else {
+                    byToken[account.accessToken] = mergeClaudeAccount(primary: existing, fallback: account)
                 }
             } else {
                 byToken[account.accessToken] = account
             }
         }
         return Array(byToken.values)
+    }
+
+    private func mergeClaudeAccount(primary: ClaudeAuthAccount, fallback: ClaudeAuthAccount) -> ClaudeAuthAccount {
+        let primaryAccountId = primary.accountId?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let fallbackAccountId = fallback.accountId?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let primaryEmail = primary.email?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let fallbackEmail = fallback.email?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let mergedSourceLabels = mergeSourceLabels(primary.sourceLabels, fallback.sourceLabels)
+
+        return ClaudeAuthAccount(
+            accessToken: primary.accessToken,
+            accountId: (primaryAccountId?.isEmpty == false) ? primaryAccountId : fallbackAccountId,
+            email: (primaryEmail?.isEmpty == false) ? primaryEmail : fallbackEmail,
+            authSource: primary.authSource,
+            sourceLabels: mergedSourceLabels,
+            source: primary.source
+        )
     }
 
     // MARK: - GitHub Copilot Token Discovery
@@ -1013,7 +1615,7 @@ final class TokenManager: @unchecked Sendable {
 
     // MARK: - OpenAI Account Discovery
 
-    /// Gets all OpenAI accounts (OpenCode auth + Codex native auth)
+    /// Gets all OpenAI accounts (OpenCode auth + codex-lb + Codex native auth)
     func getOpenAIAccounts() -> [OpenAIAuthAccount] {
         var accounts: [OpenAIAuthAccount] = []
 
@@ -1025,10 +1627,17 @@ final class TokenManager: @unchecked Sendable {
                 OpenAIAuthAccount(
                     accessToken: access,
                     accountId: auth.openai?.accountId,
+                    email: nil,
                     authSource: authSource,
+                    sourceLabels: [openAISourceLabel(for: .opencodeAuth)],
                     source: .opencodeAuth
                 )
             )
+        }
+
+        let codexLBAccounts = readCodexLBOpenAIAccounts()
+        if !codexLBAccounts.isEmpty {
+            accounts.append(contentsOf: codexLBAccounts)
         }
 
         if let codexAuth = readCodexAuth(),
@@ -1043,14 +1652,17 @@ final class TokenManager: @unchecked Sendable {
                 OpenAIAuthAccount(
                     accessToken: access,
                     accountId: codexAuth.tokens?.accountId,
+                    email: nil,
                     authSource: authSource,
+                    sourceLabels: [openAISourceLabel(for: .codexAuth)],
                     source: .codexAuth
                 )
             )
         }
 
-        logger.info("OpenAI accounts discovered: \(accounts.count)")
-        return accounts
+        let deduped = dedupeOpenAIAccounts(accounts)
+        logger.info("OpenAI accounts discovered: \(deduped.count)")
+        return deduped
     }
 
     // MARK: - Gemini OAuth Auth File Reading (jenslys/opencode-gemini-auth)
@@ -1359,6 +1971,7 @@ final class TokenManager: @unchecked Sendable {
                         refreshToken: parts.refreshToken,
                         projectId: projectId,
                         authSource: authSource,
+                        sourceLabels: [geminiSourceLabel(for: .opencodeAuth)],
                         clientId: TokenManager.geminiAuthPluginClientId,
                         clientSecret: TokenManager.geminiAuthPluginClientSecret,
                         source: .opencodeAuth
@@ -1371,13 +1984,39 @@ final class TokenManager: @unchecked Sendable {
 
         if let antigravity = readAntigravityAccounts(), !antigravity.accounts.isEmpty {
             let authSource = antigravityAccountsPath().path
-            let antigravityAccounts = antigravity.accounts.enumerated().map { index, account in
-                GeminiAuthAccount(
+            let antigravityAccounts = antigravity.accounts.enumerated().compactMap { index, account -> GeminiAuthAccount? in
+                if account.enabled == false {
+                    logger.info("Skipping disabled Antigravity account at index \(index)")
+                    return nil
+                }
+
+                let refreshToken = account.refreshToken?
+                    .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                if refreshToken.isEmpty {
+                    logger.warning("Skipping Antigravity account at index \(index): missing refresh token")
+                    return nil
+                }
+
+                let primaryProjectId = account.projectId?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                let fallbackProjectId = account.managedProjectId?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                let projectId = primaryProjectId.isEmpty ? fallbackProjectId : primaryProjectId
+                if projectId.isEmpty {
+                    logger.warning("Skipping Antigravity account at index \(index): missing project ID")
+                    return nil
+                }
+
+                let normalizedEmail: String? = {
+                    let value = account.email?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                    return value.isEmpty ? nil : value
+                }()
+
+                return GeminiAuthAccount(
                     index: index,
-                    email: account.email,
-                    refreshToken: account.refreshToken,
-                    projectId: account.projectId,
+                    email: normalizedEmail,
+                    refreshToken: refreshToken,
+                    projectId: projectId,
                     authSource: authSource,
+                    sourceLabels: [geminiSourceLabel(for: .antigravity)],
                     clientId: TokenManager.geminiClientId,
                     clientSecret: TokenManager.geminiClientSecret,
                     source: .antigravity
@@ -1397,6 +2036,7 @@ final class TokenManager: @unchecked Sendable {
                 refreshToken: account.refreshToken,
                 projectId: account.projectId,
                 authSource: account.authSource,
+                sourceLabels: account.sourceLabels,
                 clientId: account.clientId,
                 clientSecret: account.clientSecret,
                 source: account.source
@@ -1583,6 +2223,48 @@ final class TokenManager: @unchecked Sendable {
             lines.append("  Codex auth.json (\(shortPath(codexAuthPath.path))): NOT FOUND")
         }
 
+        let codexLBAccounts = readCodexLBOpenAIAccounts()
+        let codexLBCandidates = codexLBStorageCandidates()
+        let codexLBExistingCandidate = codexLBCandidates.first {
+            fileManager.fileExists(atPath: $0.databaseURL.path) || fileManager.fileExists(atPath: $0.keyURL.path)
+        }
+        if let storePath = lastFoundCodexLBStorePath,
+           let keyPath = lastFoundCodexLBKeyPath {
+            lines.append(
+                "  codex-lb store.db (\(shortPath(storePath.path))): FOUND (\(codexLBAccounts.count) account(s))"
+            )
+            lines.append("  codex-lb encryption.key (\(shortPath(keyPath.path))): FOUND")
+        } else if let candidate = codexLBExistingCandidate {
+            let dbStatus: String
+            if !fileManager.fileExists(atPath: candidate.databaseURL.path) {
+                dbStatus = "NOT FOUND"
+            } else if !fileManager.isReadableFile(atPath: candidate.databaseURL.path) {
+                dbStatus = "UNREADABLE"
+            } else {
+                dbStatus = "FOUND"
+            }
+
+            let keyStatus: String
+            if !fileManager.fileExists(atPath: candidate.keyURL.path) {
+                keyStatus = "NOT FOUND"
+            } else if !fileManager.isReadableFile(atPath: candidate.keyURL.path) {
+                keyStatus = "UNREADABLE"
+            } else {
+                keyStatus = "FOUND"
+            }
+
+            lines.append("  codex-lb store.db (\(shortPath(candidate.databaseURL.path))): \(dbStatus)")
+            lines.append("  codex-lb encryption.key (\(shortPath(candidate.keyURL.path))): \(keyStatus)")
+            if dbStatus == "FOUND", keyStatus == "FOUND" {
+                lines.append("  codex-lb accounts: 0 decryptable account(s)")
+            }
+        } else {
+            let defaultCodexLBStore = homeDir.appendingPathComponent(".codex-lb").appendingPathComponent("store.db")
+            let defaultCodexLBKey = homeDir.appendingPathComponent(".codex-lb").appendingPathComponent("encryption.key")
+            lines.append("  codex-lb store.db (\(shortPath(defaultCodexLBStore.path))): NOT FOUND")
+            lines.append("  codex-lb encryption.key (\(shortPath(defaultCodexLBKey.path))): NOT FOUND")
+        }
+
         lines.append("")
         lines.append("[Claude]")
         lines.append("  OpenCode auth.json (\(shortPath(openCodePath))): \(tokenStatus(hasAuth: openCodeAuth != nil, token: openCodeAuth?.anthropic?.access, accountId: openCodeAuth?.anthropic?.accountId))")
@@ -1745,8 +2427,14 @@ final class TokenManager: @unchecked Sendable {
 
         // 4. Antigravity accounts
         if let accounts = readAntigravityAccounts() {
-            let invalidMarker = accounts.activeIndex < 0 || accounts.activeIndex >= accounts.accounts.count ? " (INVALID)" : ""
-            debugLines.append("  [Antigravity] \(accounts.accounts.count) account(s), active index: \(accounts.activeIndex)\(invalidMarker)")
+            let activeIndexText: String
+            if let activeIndex = accounts.activeIndex {
+                let invalidMarker = activeIndex < 0 || activeIndex >= accounts.accounts.count ? " (INVALID)" : ""
+                activeIndexText = "\(activeIndex)\(invalidMarker)"
+            } else {
+                activeIndexText = "n/a"
+            }
+            debugLines.append("  [Antigravity] \(accounts.accounts.count) account(s), active index: \(activeIndexText)")
         } else {
             debugLines.append("  [Antigravity] NOT CONFIGURED")
         }
@@ -1766,6 +2454,33 @@ final class TokenManager: @unchecked Sendable {
             }
         } else {
             debugLines.append("  [NOT FOUND]")
+        }
+
+        // 6. codex-lb multi-account auth (~/.codex-lb/store.db + encryption.key)
+        debugLines.append("")
+        debugLines.append("codex-lb Auth (~/.codex-lb):")
+        let codexLBAccounts = readCodexLBOpenAIAccounts()
+        if let storePath = lastFoundCodexLBStorePath,
+           let keyPath = lastFoundCodexLBKeyPath {
+            debugLines.append("  [FOUND] store.db: \(storePath.path)")
+            debugLines.append("  [FOUND] encryption.key: \(keyPath.path)")
+            debugLines.append("  [ACCOUNTS] \(codexLBAccounts.count) decryptable account(s)")
+        } else {
+            let candidates = codexLBStorageCandidates()
+            if let candidate = candidates.first(where: {
+                fileManager.fileExists(atPath: $0.databaseURL.path) || fileManager.fileExists(atPath: $0.keyURL.path)
+            }) {
+                let dbState = fileManager.fileExists(atPath: candidate.databaseURL.path) ? "FOUND" : "NOT FOUND"
+                let keyState = fileManager.fileExists(atPath: candidate.keyURL.path) ? "FOUND" : "NOT FOUND"
+                debugLines.append("  [\(dbState)] store.db: \(candidate.databaseURL.path)")
+                debugLines.append("  [\(keyState)] encryption.key: \(candidate.keyURL.path)")
+                debugLines.append("  [ACCOUNTS] 0 decryptable account(s)")
+            } else {
+                let defaultStore = homeDir.appendingPathComponent(".codex-lb").appendingPathComponent("store.db")
+                let defaultKey = homeDir.appendingPathComponent(".codex-lb").appendingPathComponent("encryption.key")
+                debugLines.append("  [NOT FOUND] store.db: \(defaultStore.path)")
+                debugLines.append("  [NOT FOUND] encryption.key: \(defaultKey.path)")
+            }
         }
 
         debugLines.append("")
@@ -2005,12 +2720,13 @@ final class TokenManager: @unchecked Sendable {
         // 6. Antigravity accounts
         if let accounts = readAntigravityAccounts() {
             debugLines.append("[Antigravity Accounts] \(accounts.accounts.count) account(s)")
-            debugLines.append("  - Active Index: \(accounts.activeIndex)")
+            debugLines.append("  - Active Index: \(accounts.activeIndex.map { String($0) } ?? "n/a")")
             for (index, account) in accounts.accounts.enumerated() {
                 let activeMarker = index == accounts.activeIndex ? " (ACTIVE)" : ""
-                debugLines.append("  - [\(index)] \(account.email)\(activeMarker)")
-                debugLines.append("    - Refresh Token: \(account.refreshToken.count) chars")
-                debugLines.append("    - Project ID: \(account.projectId)")
+                debugLines.append("  - [\(index)] \(account.email ?? "unknown")\(activeMarker)")
+                debugLines.append("    - Enabled: \(account.enabled == false ? "NO" : "YES")")
+                debugLines.append("    - Refresh Token: \(account.refreshToken?.count ?? 0) chars")
+                debugLines.append("    - Project ID: \(account.projectId ?? account.managedProjectId ?? "missing")")
             }
         } else {
             debugLines.append("[Antigravity Accounts] NOT FOUND or PARSE FAILED")
@@ -2036,6 +2752,30 @@ final class TokenManager: @unchecked Sendable {
             }
         } else {
             debugLines.append("[Codex Auth] NOT FOUND at \(codexAuthPath.path)")
+        }
+
+        // 8. codex-lb auth (~/.codex-lb/store.db + encryption.key)
+        debugLines.append("---------- codex-lb Auth ----------")
+        let codexLBAccounts = readCodexLBOpenAIAccounts()
+        if let storePath = lastFoundCodexLBStorePath,
+           let keyPath = lastFoundCodexLBKeyPath {
+            debugLines.append("[codex-lb] store.db: \(storePath.path)")
+            debugLines.append("[codex-lb] encryption.key: \(keyPath.path)")
+            debugLines.append("[codex-lb] Accounts: \(codexLBAccounts.count) decryptable")
+        } else {
+            let candidates = codexLBStorageCandidates()
+            if let candidate = candidates.first(where: {
+                fileManager.fileExists(atPath: $0.databaseURL.path) || fileManager.fileExists(atPath: $0.keyURL.path)
+            }) {
+                let dbState = fileManager.fileExists(atPath: candidate.databaseURL.path) ? "FOUND" : "NOT FOUND"
+                let keyState = fileManager.fileExists(atPath: candidate.keyURL.path) ? "FOUND" : "NOT FOUND"
+                debugLines.append("[codex-lb] store.db: \(candidate.databaseURL.path) (\(dbState))")
+                debugLines.append("[codex-lb] encryption.key: \(candidate.keyURL.path) (\(keyState))")
+                debugLines.append("[codex-lb] Accounts: 0 decryptable")
+            } else {
+                debugLines.append("[codex-lb] store.db: NOT FOUND")
+                debugLines.append("[codex-lb] encryption.key: NOT FOUND")
+            }
         }
 
         debugLines.append("================================================")
