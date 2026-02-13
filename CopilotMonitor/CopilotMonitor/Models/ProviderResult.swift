@@ -92,6 +92,11 @@ struct DetailedUsage {
     let secondaryUsage: Double?
     let secondaryReset: Date?
     let primaryReset: Date?
+    let sparkUsage: Double?
+    let sparkReset: Date?
+    let sparkSecondaryUsage: Double?
+    let sparkSecondaryReset: Date?
+    let sparkWindowLabel: String?
 
     // Codex/Antigravity plan info
     let creditsBalance: Double?
@@ -170,6 +175,11 @@ struct DetailedUsage {
         secondaryUsage: Double? = nil,
         secondaryReset: Date? = nil,
         primaryReset: Date? = nil,
+        sparkUsage: Double? = nil,
+        sparkReset: Date? = nil,
+        sparkSecondaryUsage: Double? = nil,
+        sparkSecondaryReset: Date? = nil,
+        sparkWindowLabel: String? = nil,
         creditsBalance: Double? = nil,
         planType: String? = nil,
         extraUsageEnabled: Bool? = nil,
@@ -227,6 +237,11 @@ struct DetailedUsage {
         self.secondaryUsage = secondaryUsage
         self.secondaryReset = secondaryReset
         self.primaryReset = primaryReset
+        self.sparkUsage = sparkUsage
+        self.sparkReset = sparkReset
+        self.sparkSecondaryUsage = sparkSecondaryUsage
+        self.sparkSecondaryReset = sparkSecondaryReset
+        self.sparkWindowLabel = sparkWindowLabel
         self.creditsBalance = creditsBalance
         self.planType = planType
         self.extraUsageEnabled = extraUsageEnabled
@@ -272,6 +287,7 @@ extension DetailedUsage: Codable {
         case fiveHourUsage, fiveHourReset, sevenDayUsage, sevenDayReset
         case sonnetUsage, sonnetReset, opusUsage, opusReset, modelBreakdown, modelResetTimes
         case secondaryUsage, secondaryReset, primaryReset
+        case sparkUsage, sparkReset, sparkSecondaryUsage, sparkSecondaryReset, sparkWindowLabel
         case creditsBalance, planType, extraUsageEnabled
         case extraUsageMonthlyLimitUSD, extraUsageUsedUSD, extraUsageUtilizationPercent
         case sessions, messages, avgCostPerDay, email
@@ -307,6 +323,11 @@ extension DetailedUsage: Codable {
         secondaryUsage = try container.decodeIfPresent(Double.self, forKey: .secondaryUsage)
         secondaryReset = try container.decodeIfPresent(Date.self, forKey: .secondaryReset)
         primaryReset = try container.decodeIfPresent(Date.self, forKey: .primaryReset)
+        sparkUsage = try container.decodeIfPresent(Double.self, forKey: .sparkUsage)
+        sparkReset = try container.decodeIfPresent(Date.self, forKey: .sparkReset)
+        sparkSecondaryUsage = try container.decodeIfPresent(Double.self, forKey: .sparkSecondaryUsage)
+        sparkSecondaryReset = try container.decodeIfPresent(Date.self, forKey: .sparkSecondaryReset)
+        sparkWindowLabel = try container.decodeIfPresent(String.self, forKey: .sparkWindowLabel)
         creditsBalance = try container.decodeIfPresent(Double.self, forKey: .creditsBalance)
         planType = try container.decodeIfPresent(String.self, forKey: .planType)
         extraUsageEnabled = try container.decodeIfPresent(Bool.self, forKey: .extraUsageEnabled)
@@ -367,6 +388,11 @@ extension DetailedUsage: Codable {
         try container.encodeIfPresent(secondaryUsage, forKey: .secondaryUsage)
         try container.encodeIfPresent(secondaryReset, forKey: .secondaryReset)
         try container.encodeIfPresent(primaryReset, forKey: .primaryReset)
+        try container.encodeIfPresent(sparkUsage, forKey: .sparkUsage)
+        try container.encodeIfPresent(sparkReset, forKey: .sparkReset)
+        try container.encodeIfPresent(sparkSecondaryUsage, forKey: .sparkSecondaryUsage)
+        try container.encodeIfPresent(sparkSecondaryReset, forKey: .sparkSecondaryReset)
+        try container.encodeIfPresent(sparkWindowLabel, forKey: .sparkWindowLabel)
         try container.encodeIfPresent(creditsBalance, forKey: .creditsBalance)
         try container.encodeIfPresent(planType, forKey: .planType)
         try container.encodeIfPresent(extraUsageEnabled, forKey: .extraUsageEnabled)
@@ -483,6 +509,7 @@ extension DetailedUsage {
             || opusUsage != nil || opusReset != nil
             || modelBreakdown != nil || modelResetTimes != nil
             || secondaryUsage != nil || secondaryReset != nil || primaryReset != nil
+            || sparkUsage != nil || sparkReset != nil || sparkSecondaryUsage != nil || sparkSecondaryReset != nil || sparkWindowLabel != nil
             || creditsBalance != nil || planType != nil
             || extraUsageEnabled != nil
             || extraUsageMonthlyLimitUSD != nil || extraUsageUsedUSD != nil || extraUsageUtilizationPercent != nil

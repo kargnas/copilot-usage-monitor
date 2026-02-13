@@ -46,11 +46,35 @@ final class CodexProviderTests: XCTestCase {
         
         let usedPercent = primaryWindow["used_percent"] as? Double
         let resetAfterSeconds = primaryWindow["reset_after_seconds"] as? Int
+
+        guard let additionalRateLimits = dict["additional_rate_limits"] as? [[String: Any]],
+              let sparkLimit = additionalRateLimits.first,
+              let sparkLimitName = sparkLimit["limit_name"] as? String,
+              let sparkRateLimit = sparkLimit["rate_limit"] as? [String: Any],
+              let sparkPrimary = sparkRateLimit["primary_window"] as? [String: Any],
+              let sparkSecondary = sparkRateLimit["secondary_window"] as? [String: Any] else {
+            XCTFail("additional_rate_limits[0].rate_limit.{primary_window,secondary_window} should exist")
+            return
+        }
+
+        let sparkUsedPercent = sparkPrimary["used_percent"] as? Double ?? (sparkPrimary["used_percent"] as? Int).flatMap { Double($0) }
+        let sparkResetAfterSeconds = sparkPrimary["reset_after_seconds"] as? Int
+        let sparkSecondaryUsedPercent = sparkSecondary["used_percent"] as? Double ?? (sparkSecondary["used_percent"] as? Int).flatMap { Double($0) }
+        let sparkSecondaryResetAfterSeconds = sparkSecondary["reset_after_seconds"] as? Int
         
         XCTAssertNotNil(usedPercent)
         XCTAssertNotNil(resetAfterSeconds)
         XCTAssertEqual(usedPercent, 9.0)
         XCTAssertEqual(resetAfterSeconds, 7252)
+        XCTAssertEqual(sparkLimitName, "GPT-5.3-Codex-Spark")
+        XCTAssertNotNil(sparkUsedPercent)
+        XCTAssertNotNil(sparkResetAfterSeconds)
+        XCTAssertEqual(sparkUsedPercent, 16.0)
+        XCTAssertEqual(sparkResetAfterSeconds, 16711)
+        XCTAssertNotNil(sparkSecondaryUsedPercent)
+        XCTAssertNotNil(sparkSecondaryResetAfterSeconds)
+        XCTAssertEqual(sparkSecondaryUsedPercent, 5.0)
+        XCTAssertEqual(sparkSecondaryResetAfterSeconds, 603511)
     }
     
     func testProviderUsageQuotaBasedModel() {

@@ -10,15 +10,53 @@ final class CodexProvider: ProviderProtocol {
     private struct RateLimitWindow: Codable {
         let used_percent: Double
         let limit_window_seconds: Int?
-        let reset_after_seconds: Int
+        let reset_after_seconds: Int?
         let reset_at: Int?
     }
 
-    private struct RateLimit: Codable {
-        let allowed: Bool?
-        let limit_reached: Bool?
-        let primary_window: RateLimitWindow
-        let secondary_window: RateLimitWindow?
+    private struct RateLimit: Decodable {
+        let windows: [String: RateLimitWindow]
+
+        var primaryWindow: RateLimitWindow? {
+            windows["primary_window"]
+        }
+
+        var secondaryWindow: RateLimitWindow? {
+            windows["secondary_window"]
+        }
+
+        var sparkWindows: [(String, RateLimitWindow)] {
+            windows
+                .filter { $0.key.lowercased().contains("spark") }
+                .map { ($0.key, $0.value) }
+                .sorted { lhs, rhs in
+                    lhs.0.localizedStandardCompare(rhs.0) == .orderedAscending
+                }
+        }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: DynamicCodingKey.self)
+            var parsed: [String: RateLimitWindow] = [:]
+            for key in container.allKeys {
+                if let window = try? container.decode(RateLimitWindow.self, forKey: key) {
+                    parsed[key.stringValue] = window
+                }
+            }
+            windows = parsed
+        }
+
+        struct DynamicCodingKey: CodingKey {
+            var stringValue: String
+            let intValue: Int? = nil
+
+            init?(stringValue: String) {
+                self.stringValue = stringValue
+            }
+
+            init?(intValue: Int) {
+                nil
+            }
+        }
     }
 
     private struct CreditsInfo: Codable {
@@ -34,9 +72,16 @@ final class CodexProvider: ProviderProtocol {
         }
     }
 
-    private struct CodexResponse: Codable {
+    private struct CodexResponse: Decodable {
+        struct AdditionalRateLimit: Decodable {
+            let limit_name: String?
+            let metered_feature: String?
+            let rate_limit: RateLimit?
+        }
+
         let plan_type: String?
         let rate_limit: RateLimit
+        let additional_rate_limits: [AdditionalRateLimit]?
         let credits: CreditsInfo?
     }
 
@@ -212,16 +257,38 @@ final class CodexProvider: ProviderProtocol {
             throw ProviderError.decodingError(error.localizedDescription)
         }
 
-        let primaryWindow = codexResponse.rate_limit.primary_window
-        let secondaryWindow = codexResponse.rate_limit.secondary_window
+        guard let primaryWindow = codexResponse.rate_limit.primaryWindow else {
+            logger.error("Codex response missing primary_window")
+            throw ProviderError.decodingError("Missing primary window")
+        }
+        let secondaryWindow = codexResponse.rate_limit.secondaryWindow
+        let additionalSparkLimit = codexResponse.additional_rate_limits?.first { limit in
+            let name = limit.limit_name ?? ""
+            return name.range(of: "spark", options: .caseInsensitive) != nil
+                && limit.rate_limit?.primaryWindow != nil
+        }
+        let inlineSparkWindow = codexResponse.rate_limit.sparkWindows.first
         let primaryUsedPercent = primaryWindow.used_percent
-        let primaryResetSeconds = primaryWindow.reset_after_seconds
+        let primaryResetSeconds = primaryWindow.reset_after_seconds ?? 0
         let secondaryUsedPercent = secondaryWindow?.used_percent ?? 0.0
         let secondaryResetSeconds = secondaryWindow?.reset_after_seconds ?? 0
+        let sparkUsedPercent = inlineSparkWindow?.1.used_percent
+            ?? additionalSparkLimit?.rate_limit?.primaryWindow?.used_percent
+        let sparkWindowLabel = normalizeSparkWindowLabel(inlineSparkWindow?.0 ?? additionalSparkLimit?.limit_name)
+        let sparkResetSeconds = inlineSparkWindow?.1.reset_after_seconds
+            ?? additionalSparkLimit?.rate_limit?.primaryWindow?.reset_after_seconds
+        let sparkSecondaryUsedPercent = inlineSparkWindow == nil
+            ? additionalSparkLimit?.rate_limit?.secondaryWindow?.used_percent
+            : nil
+        let sparkSecondaryResetSeconds = inlineSparkWindow == nil
+            ? additionalSparkLimit?.rate_limit?.secondaryWindow?.reset_after_seconds
+            : nil
 
         let now = Date()
         let primaryResetDate = now.addingTimeInterval(TimeInterval(primaryResetSeconds))
         let secondaryResetDate = secondaryWindow != nil ? now.addingTimeInterval(TimeInterval(secondaryResetSeconds)) : nil
+        let sparkResetDate = sparkResetSeconds != nil ? now.addingTimeInterval(TimeInterval(sparkResetSeconds ?? 0)) : nil
+        let sparkSecondaryResetDate = sparkSecondaryResetSeconds != nil ? now.addingTimeInterval(TimeInterval(sparkSecondaryResetSeconds ?? 0)) : nil
 
         let remaining = Int(100 - primaryUsedPercent)
         let sourceLabels = account.sourceLabels.isEmpty ? [sourceLabel(account.source)] : account.sourceLabels
@@ -231,6 +298,11 @@ final class CodexProvider: ProviderProtocol {
             secondaryUsage: secondaryUsedPercent,
             secondaryReset: secondaryResetDate,
             primaryReset: primaryResetDate,
+            sparkUsage: sparkUsedPercent,
+            sparkReset: sparkResetDate,
+            sparkSecondaryUsage: sparkSecondaryUsedPercent,
+            sparkSecondaryReset: sparkSecondaryResetDate,
+            sparkWindowLabel: sparkWindowLabel,
             creditsBalance: codexResponse.credits?.balanceAsDouble,
             planType: codexResponse.plan_type,
             email: account.email,
@@ -238,7 +310,17 @@ final class CodexProvider: ProviderProtocol {
             authUsageSummary: authUsageSummary
         )
 
-        logger.debug("Codex usage fetched (\(authUsageSummary)): email=\(account.email ?? "unknown"), primary=\(primaryUsedPercent)%, secondary=\(secondaryUsedPercent)%, plan=\(codexResponse.plan_type ?? "unknown")")
+        let sparkSummary = sparkUsedPercent.map { String(format: "%.1f%%", $0) } ?? "none"
+        let sparkWeeklySummary = sparkSecondaryUsedPercent.map { String(format: "%.1f%%", $0) } ?? "none"
+        let sparkSource: String
+        if inlineSparkWindow != nil {
+            sparkSource = "rate_limit"
+        } else if additionalSparkLimit != nil {
+            sparkSource = "additional_rate_limits"
+        } else {
+            sparkSource = "none"
+        }
+        logger.debug("Codex usage fetched (\(authUsageSummary)): email=\(account.email ?? "unknown"), primary=\(primaryUsedPercent)%, secondary=\(secondaryUsedPercent)%, spark_primary=\(sparkSummary), spark_secondary=\(sparkWeeklySummary), spark_source=\(sparkSource), plan=\(codexResponse.plan_type ?? "unknown"), spark_window=\(sparkWindowLabel ?? "none")")
 
         let usage = ProviderUsage.quotaBased(remaining: remaining, entitlement: 100, overagePermitted: false)
         return CodexAccountCandidate(
@@ -255,7 +337,34 @@ final class CodexProvider: ProviderProtocol {
         let secondaryMatch = lhs.details.secondaryUsage == rhs.details.secondaryUsage
         let primaryResetMatch = sameDate(lhs.details.primaryReset, rhs.details.primaryReset)
         let secondaryResetMatch = sameDate(lhs.details.secondaryReset, rhs.details.secondaryReset)
-        return primaryMatch && secondaryMatch && primaryResetMatch && secondaryResetMatch
+        let sparkUsageMatch = lhs.details.sparkUsage == rhs.details.sparkUsage
+        let sparkResetMatch = sameDate(lhs.details.sparkReset, rhs.details.sparkReset)
+        let sparkSecondaryUsageMatch = lhs.details.sparkSecondaryUsage == rhs.details.sparkSecondaryUsage
+        let sparkSecondaryResetMatch = sameDate(lhs.details.sparkSecondaryReset, rhs.details.sparkSecondaryReset)
+        let sparkWindowLabelMatch = lhs.details.sparkWindowLabel == rhs.details.sparkWindowLabel
+        return primaryMatch
+            && secondaryMatch
+            && primaryResetMatch
+            && secondaryResetMatch
+            && sparkUsageMatch
+            && sparkResetMatch
+            && sparkSecondaryUsageMatch
+            && sparkSecondaryResetMatch
+            && sparkWindowLabelMatch
+    }
+
+    private func normalizeSparkWindowLabel(_ rawLabel: String?) -> String? {
+        guard let rawLabel else { return nil }
+        let normalized = rawLabel
+            .replacingOccurrences(of: "_window", with: "", options: .caseInsensitive)
+            .replacingOccurrences(of: "-", with: " ")
+            .replacingOccurrences(of: "_", with: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalized.isEmpty else { return nil }
+        if normalized.lowercased() == normalized {
+            return normalized.capitalized
+        }
+        return normalized
     }
 
     private func sameDate(_ lhs: Date?, _ rhs: Date?) -> Bool {

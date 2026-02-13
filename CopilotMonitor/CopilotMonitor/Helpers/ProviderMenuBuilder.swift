@@ -327,25 +327,61 @@ extension StatusBarController {
 
         case .codex:
             // === Usage Windows ===
+            let sparkLabel = {
+                guard let rawLabel = details.sparkWindowLabel else { return "Spark" }
+                let normalized = rawLabel
+                    .replacingOccurrences(of: "_window", with: "", options: .caseInsensitive)
+                    .replacingOccurrences(of: "-", with: " ")
+                    .replacingOccurrences(of: "_", with: " ")
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !normalized.isEmpty else { return "Spark" }
+                if normalized.lowercased() == normalized {
+                    return normalized.capitalized
+                }
+                return normalized
+            }()
+
+            var baseUsageRows: [(label: String, usage: Double, resetDate: Date?, windowHours: Int?)] = []
             if let primary = details.dailyUsage {
                 // BUGFIX: Codex primary window is 5 hours, not 24
+                baseUsageRows.append((label: "5h", usage: primary, resetDate: details.primaryReset, windowHours: 5))
+            }
+            if let secondary = details.secondaryUsage {
+                baseUsageRows.append((label: "Weekly", usage: secondary, resetDate: details.secondaryReset, windowHours: 168))
+            }
+
+            for (index, row) in baseUsageRows.enumerated() {
+                if index > 0 {
+                    submenu.addItem(NSMenuItem.separator())
+                }
                 let items = createUsageWindowRow(
-                    label: "5h",
-                    usagePercent: primary,
-                    resetDate: details.primaryReset,
-                    windowHours: 5
+                    label: row.label,
+                    usagePercent: row.usage,
+                    resetDate: row.resetDate,
+                    windowHours: row.windowHours
                 )
                 items.forEach { submenu.addItem($0) }
             }
-            if details.dailyUsage != nil, details.secondaryUsage != nil {
+
+            var sparkUsageRows: [(label: String, usage: Double, resetDate: Date?, windowHours: Int?)] = []
+            if let sparkPrimary = details.sparkUsage {
+                sparkUsageRows.append((label: "5h (\(sparkLabel))", usage: sparkPrimary, resetDate: details.sparkReset, windowHours: 5))
+            }
+            if let sparkSecondary = details.sparkSecondaryUsage {
+                sparkUsageRows.append((label: "Weekly (\(sparkLabel))", usage: sparkSecondary, resetDate: details.sparkSecondaryReset, windowHours: 168))
+            }
+            if !sparkUsageRows.isEmpty, !baseUsageRows.isEmpty {
                 submenu.addItem(NSMenuItem.separator())
             }
-            if let secondary = details.secondaryUsage {
+            for (index, row) in sparkUsageRows.enumerated() {
+                if index > 0 {
+                    submenu.addItem(NSMenuItem.separator())
+                }
                 let items = createUsageWindowRow(
-                    label: "Weekly",
-                    usagePercent: secondary,
-                    resetDate: details.secondaryReset,
-                    windowHours: 168
+                    label: row.label,
+                    usagePercent: row.usage,
+                    resetDate: row.resetDate,
+                    windowHours: row.windowHours
                 )
                 items.forEach { submenu.addItem($0) }
             }

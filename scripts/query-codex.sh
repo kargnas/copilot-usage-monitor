@@ -64,12 +64,37 @@ fi
 
 echo "=== Usage Stats ==="
 echo "$RESPONSE" | jq '
+def spark_windows: (.rate_limit | to_entries | map(select(.key | test("spark"; "i"))));
+def additional_spark_limits: ((.additional_rate_limits // []) | map(select((.limit_name // "" | test("spark"; "i")) and (.rate_limit != null))));
+def spark_window_obj: (
+    if (spark_windows | length) > 0
+    then {"primary_window": (spark_windows | map(.value)[0]), "secondary_window": null}
+    elif (additional_spark_limits | length) > 0
+    then (additional_spark_limits[0].rate_limit // null)
+    else null
+    end
+);
+def spark_label: (
+    if (spark_windows | length) > 0
+    then (spark_windows | map(.key)[0] // null)
+    elif (additional_spark_limits | length) > 0
+    then (additional_spark_limits[0].limit_name // null)
+    else null
+    end
+);
 {
     "plan": .plan_type,
     "primary_used": (.rate_limit.primary_window.used_percent | tostring + "%"),
     "primary_reset_seconds": .rate_limit.primary_window.reset_after_seconds,
     "secondary_used": (.rate_limit.secondary_window.used_percent | tostring + "%"),
     "secondary_reset_seconds": .rate_limit.secondary_window.reset_after_seconds,
+    "spark_primary_used": ((spark_window_obj.primary_window.used_percent // null) | if . == null then null else tostring + "%" end),
+    "spark_primary_reset_seconds": (spark_window_obj.primary_window.reset_after_seconds // null),
+    "spark_secondary_used": ((spark_window_obj.secondary_window.used_percent // null) | if . == null then null else tostring + "%" end),
+    "spark_secondary_reset_seconds": (spark_window_obj.secondary_window.reset_after_seconds // null),
+    "spark_used": ((spark_window_obj.primary_window.used_percent // null) | if . == null then null else tostring + "%" end),
+    "spark_window": spark_label,
+    "spark_reset_seconds": (spark_window_obj.primary_window.reset_after_seconds // null),
     "credits_balance": .credits.balance,
     "credits_unlimited": .credits.unlimited
 }'
